@@ -1,0 +1,8 @@
+#!/bin/sh
+# Packaged launcher (contracts/cli-and-launcher.md, FR-013).
+# Program/read-only files live in /usr/share/fmd2; user state uses XDG dirs.
+# FMD2_CONFIG_DIR is an optional user override (same as --config-dir) and is
+# deliberately left untouched so the app keeps its XDG defaults
+# (${XDG_CONFIG_HOME:-~/.config}/fmd2 and friends).
+export FMD_DIRECTORY="${FMD_DIRECTORY:-/usr/share/fmd2}"
+exec /usr/lib/fmd2/fmd "$@"

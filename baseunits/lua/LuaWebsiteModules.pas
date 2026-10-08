@@ -238,7 +238,10 @@ begin
       Result := lua_tointeger(L.Handle, -1);
     except
       on E: Exception do
+      begin
+        WriteLn(StdErr, 'LUDBG DoGetNameAndLink: ', E.ClassName, ': ', E.Message); Flush(StdErr);
         SendLogException('LUA>DoGetNameAndLink("' + ExtractFileName(Container.FileName) + '")>', E);
+      end;
     end;
 end;
 
@@ -260,7 +263,10 @@ begin
       Result := lua_tointeger(L.Handle, -1);
     except
       on E: Exception do
+      begin
+        WriteLn(StdErr, 'LUDBG DoGetInfo: ', E.ClassName, ': ', E.Message); Flush(StdErr);
         SendLogException('LUA>DoGetInfo("' + ExtractFileName(Container.FileName) + '")>', E);
+      end;
     end;
 end;
 

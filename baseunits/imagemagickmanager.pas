@@ -5,8 +5,11 @@ unit ImageMagickManager;
 interface
 
 uses
-  Classes, SysUtils, synautil, StrUtils, StdCtrls, Process, Windows, Registry,
-  LazFileUtils, SyncObjs, MultiLog;
+  Classes, SysUtils, synautil, StrUtils, StdCtrls, Process,
+  {$IFDEF WINDOWS}
+  Windows, Registry,
+  {$ENDIF}
+  FileUtil, LazFileUtils, SyncObjs, MultiLog;
 
 type
   { TImageMagickManager }
@@ -251,6 +254,7 @@ begin
 end;
 
 function TImageMagickManager.FindMagickBinary: Boolean;
+{$IFDEF WINDOWS}
 var
   Reg: TRegistry;
   Paths: array of String;
@@ -259,11 +263,13 @@ var
   StartupInfo: TStartupInfo;
   ProcessInfo: TProcessInformation;
   CommandLine: string;
+{$ENDIF}
 begin
   Result := False;
   FMagickPath := '';
   FLastError := '';
 
+{$IFDEF WINDOWS}
   // 1. Check common installation paths
   Paths := [
     'C:\Program Files\ImageMagick\',
@@ -328,6 +334,14 @@ begin
       CloseHandle(ProcessInfo.hThread);
     end;
   end;
+{$ELSE}
+  // 4. system PATH (ImageMagick ships `magick` on Linux)
+  if FindDefaultExecutablePath('magick') <> '' then
+  begin
+    FMagickPath := ''; // Empty means use system PATH
+    Exit(True);
+  end;
+{$ENDIF}
 
   FLastError := 'Could not locate ImageMagick installation.';
 end;

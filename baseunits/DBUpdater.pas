@@ -168,7 +168,11 @@ begin
               CurrentDirectory := FMD_DIRECTORY;
               Parameters.Add('x');                                     // extract
               Parameters.Add(currentfilename);                         // input
+{$ifdef windows}
               Parameters.Add('-o' + AnsiQuotedStr(DATA_FOLDER, '"'));  // destination
+{$else}
+              Parameters.Add('-o' + DATA_FOLDER);                      // destination
+{$endif}
               Parameters.Add('-aoa');                                  // overwrite all
               Options := Options + [poWaitOnExit];
               ShowWindow := swoHIDE;

@@ -327,7 +327,7 @@ procedure TUpdateListManagerThread.ExtractFile;
 var
   Sza, datapath, filepath: String;
 begin
-  Sza := FMD_DIRECTORY + ZIP_EXE;
+  Sza := CURRENT_ZIP_EXE; // windows: same as FMD_DIRECTORY+ZIP_EXE; unix: PATH-resolved 7z
   if not FileExists(Sza) then Exit;
 
   datapath := DATA_FOLDER;
@@ -344,8 +344,7 @@ begin
       DeleteFile(datapath + website + DBDATA_EXT);
     if FileExists(datapath + website + DATA_EXT) then
       DeleteFile(datapath + website + DATA_EXT);
-    RunExternalProcess(Sza, ['x', filepath, '-o' +
-      AnsiQuotedStr(datapath, '"'), '-aoa'], False, True);
+    RunExternalProcess(Sza, ['x', filepath, '-o' + datapath, '-aoa'], False, True);
     DeleteFile(filepath);
   end
 end;

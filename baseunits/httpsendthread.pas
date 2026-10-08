@@ -68,6 +68,19 @@ type
 
   THTTPMethodRedirectEvent = procedure(const AHTTP: THTTPSendThread; const URL: String) of object;
 
+  { FR-020 test seam: while MockHTTPRequest is assigned, HTTPMethod answers from
+    this record instead of opening a socket (no network at all). A handler that
+    returns False simulates a transport failure (timeout/refused): the request
+    fails the same way a real connect failure does, ResultCode left at 500. }
+  TMockHTTPResponse = record
+    StatusCode: Integer;
+    StatusText: String;
+    ContentType: String;
+    Body: AnsiString;
+  end;
+
+  TMockHTTPRequestEvent = function(const AMethod, AURL: String; out AResponse: TMockHTTPResponse): Boolean;
+
   { THTTPSendThread }
 
   THTTPSendThread = class(THTTPSend)
@@ -85,6 +98,7 @@ type
     FOwnerCustomTerminate: TNotifyEvent;
     procedure SetTimeout(AValue: Integer);
     procedure OnOwnerTerminate(Sender: TObject);
+    function DoMockHTTPRequest(const AMethod, AURL: String): Boolean;
   protected
     procedure NormalizeHeaders;
     procedure SetHTTPCookies;
@@ -169,6 +183,7 @@ var
   DefaultProxyPort: String = '';
   DefaultProxyUser: String = '';
   DefaultProxyPass: String = '';
+  MockHTTPRequest: TMockHTTPRequestEvent = nil;
 
 implementation
 
@@ -516,6 +531,9 @@ begin
   FMaxRedirect := 5;
   SetTimeout(DefaultTimeout);
   SetProxy(DefaultProxyType, DefaultProxyHost, DefaultProxyPort, DefaultProxyUser, DefaultProxyPass);
+  // FR-010: TLS certificate verification stays enabled (never disable).
+  // CA store comes from OpenSSL default paths (SSL_CTX_set_default_verify_paths).
+  Sock.SSL.VerifyCert := True;
   Reset;
   if Assigned(AOwner) then
   begin
@@ -552,6 +570,35 @@ begin
   inherited Destroy;
 end;
 
+// answers MockHTTPRequest the way THTTPSend.HTTPMethod would answer a real
+// server: same status/header/document layout, ResultCode 500 when the
+// "connection" failed
+function THTTPSendThread.DoMockHTTPRequest(const AMethod, AURL: String): Boolean;
+var
+  R: TMockHTTPResponse;
+  s: String;
+begin
+  Result := False;
+  FResultCode := 500;
+  FResultString := '';
+  FDownloadSize := 0;
+  FUploadSize := 0;
+  Clear;
+  if not MockHTTPRequest(AMethod, AURL, R) then
+    Exit;
+  s := 'HTTP/1.1 ' + IntToStr(R.StatusCode) + ' ' + R.StatusText;
+  FHeaders.Add(s);
+  DecodeStatus(s);
+  FHeaders.Add('Content-Type: ' + R.ContentType);
+  FHeaders.Add('');
+  FMimeType := R.ContentType;
+  if (UpperCase(AMethod) <> 'HEAD') and (R.StatusCode <> 204) and
+    (R.StatusCode <> 304) and (R.Body <> '') then
+    WriteStrToStream(FDocument, R.Body);
+  FDocument.Position := 0;
+  Result := True;
+end;
+
 function THTTPSendThread.HTTPMethod(const Method, URL: string): Boolean;
 var
   amethod, aurl: String;
@@ -563,7 +610,10 @@ begin
     if Assigned(OnBeforeHTTPMethod) then
       OnBeforeHTTPMethod(Self, amethod, aurl);
     SetHTTPCookies;
-    Result := inherited HTTPMethod(amethod, aurl);
+    if Assigned(MockHTTPRequest) then
+      Result := DoMockHTTPRequest(amethod, aurl)
+    else
+      Result := inherited HTTPMethod(amethod, aurl);
     if FEnabledCookies then
       ParseHTTPCookies
     else

@@ -584,6 +584,12 @@ msgid ""
 "The following settings have been disabled because ImageMagick has taken preference."
 msgstr ""
 
+#: md.no_usable_display
+#, object-pascal-format
+msgctxt "md.no_usable_display"
+msgid "fmd: no usable display (Screen.Width=%d). Connect a monitor or run headless with QT_QPA_PLATFORM=offscreen."
+msgstr ""
+
 #: selfupdater.rs_buttoncancel
 msgctxt "selfupdater.rs_buttoncancel"
 msgid "Abort"

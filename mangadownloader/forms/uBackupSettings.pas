@@ -57,14 +57,24 @@ begin
   if not DirectoryExists(BACKUP_FOLDER) then
     ForceDirectories(BACKUP_FOLDER);
   with TProcess.Create(nil) do try
-    Executable:=ZIP_EXE;
+    Executable:=CURRENT_ZIP_EXE;
     CurrentDirectory:=FMD_DIRECTORY;
+    {$IFDEF WINDOWS}
     Options:=Options+[poNewConsole];
+    {$ENDIF}
     ShowWindow:=swoHIDE;
     Parameters.Add('a');
     Parameters.Add(AFileName);
     Parameters.Add('-stl');
     Parameters.Add('-ssw');
+    {$IFNDEF WINDOWS}
+    // nobody reads our pipes (async fire-and-forget) — silence 7z instead of
+    // letting it spam the launching terminal with banners and missing-file
+    // warnings; flags supported since 7-Zip 16 / p7zip 16
+    Parameters.Add('-bso0');
+    Parameters.Add('-bsp0');
+    Parameters.Add('-bse0');
+    {$ENDIF}
     Parameters.Add(CleanPath(SETTINGS_FILE));
     Parameters.Add(CleanPath(ACCOUNTS_FILE));
     Parameters.Add(CleanPath(MODULES_FILE));

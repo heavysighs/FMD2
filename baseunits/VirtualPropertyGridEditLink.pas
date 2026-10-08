@@ -5,8 +5,9 @@ unit VirtualPropertyGridEditLink;
 interface
 
 uses
-  Classes, Windows, SysUtils, Messages, typinfo, VirtualPropertyGrid, VirtualTrees,
-  Controls, StdCtrls, LMessages, LCLType, Spin, EditBtn, Forms, StringsPropEditDlg;
+  Classes, SysUtils, typinfo, VirtualPropertyGrid, VirtualTrees,
+  Controls, StdCtrls, LMessages, LCLType, Spin, EditBtn, Forms, StringsPropEditDlg,
+  LCLIntf{$IFDEF WINDOWS}, Windows, Messages{$ENDIF};
 
 type
 
@@ -112,7 +113,12 @@ begin
     end;
     VK_UP, VK_DOWN:
     begin
+      // forward to tree so list navigation continues; LCL message on Linux
+      {$IFDEF WINDOWS}
       PostMessage(FTree.Handle, WM_KEYDOWN, Key, 0);
+      {$ELSE}
+      LCLIntf.PostMessage(FTree.Handle, LM_KEYDOWN, Key, 0);
+      {$ENDIF}
       Key := 0;
     end;
   end;

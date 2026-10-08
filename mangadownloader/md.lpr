@@ -3,18 +3,20 @@ program md;
 {$mode objfpc}{$H+}
 
 uses
-  FMDOptions,
- {$IFDEF UNIX} {$IFDEF UseCThreads}
+{$IFDEF UNIX}
+  // must be first: FPC RTL thread driver (LCL/Qt6 is threaded)
   cthreads,
- {$ENDIF} {$ENDIF}
+{$ENDIF}
+  FMDOptions,
  {$ifdef windows}
   windows,
  {$endif}
   Interfaces, // this includes the LCL widgetset
+  {$ifdef linux}qt6,{$endif} // Qt6 palette API for the in-app theme combo
   Forms, LazFileUtils, jsonini, simpleipc, sqlite3dyn, uBaseUnit, FMDVars, webp,
   CheckUpdate, DBUpdater, SelfUpdater, uDownloadsManager, LuaWebsiteModules,
   LuaBase, SimpleException, Classes, sysutils, frmMain, frmCheckModules,
-  uDarkStyle, uMetaDarkStyle, uDarkStyleSchemes, uDarkStyleParams, MultiLog,
+  {$ifdef windows}uDarkStyle,{$endif} uMetaDarkStyle, uDarkStyleSchemes, uDarkStyleParams, MultiLog,
   FileChannel, ssl_openssl3_lib, blcksock, ssl_openssl3, SQLiteData;
 
 var
@@ -48,12 +50,90 @@ const
 
 {$R *.res}
 
+{$ifdef linux}
+{ Qt6/Linux counterpart of the Windows MetaDarkStyle hook: force the app
+  palette so the in-app Theme combo (System/Dark/Light) actually does
+  something. System(0) = touch nothing and follow KDE. Fusion keeps all
+  standard widgets deriving their colors from the palette set here. }
+procedure ApplyQtForcePalette(AForceDark: Boolean);
+var
+  P: QPaletteH;
+  StyleHandle: QStyleH;
+  WS: WideString;
+
+  procedure SetC(G: QPaletteColorGroup; R: QPaletteColorRole;
+    Rr, Gg, Bb: Integer);
+  var
+    C: TQColor;
+  begin
+    QColor_fromRgb(@C, Rr, Gg, Bb);
+    QPalette_setColor(P, G, R, @C);
+  end;
+
+  procedure ApplyGroup(G: QPaletteColorGroup);
+  begin
+    if AForceDark then
+    begin
+      SetC(G, QPaletteWindow, 53, 53, 53);
+      SetC(G, QPaletteWindowText, 255, 255, 255);
+      SetC(G, QPaletteBase, 42, 42, 42);
+      SetC(G, QPaletteAlternateBase, 66, 66, 66);
+      SetC(G, QPaletteText, 255, 255, 255);
+      SetC(G, QPaletteButton, 53, 53, 53);
+      SetC(G, QPaletteButtonText, 255, 255, 255);
+      SetC(G, QPaletteLight, 90, 90, 90);
+      SetC(G, QPaletteMidlight, 70, 70, 70);
+      SetC(G, QPaletteDark, 25, 25, 25);
+      SetC(G, QPaletteMid, 40, 40, 40);
+      SetC(G, QPaletteShadow, 0, 0, 0);
+      SetC(G, QPaletteHighlight, 42, 130, 218);
+      SetC(G, QPaletteHighlightedText, 255, 255, 255);
+      SetC(G, QPaletteLink, 42, 130, 218);
+      SetC(G, QPaletteToolTipBase, 60, 60, 60);
+      SetC(G, QPaletteToolTipText, 255, 255, 255);
+      SetC(G, QPaletteBrightText, 255, 255, 255);
+    end
+    else
+    begin
+      SetC(G, QPaletteWindow, 240, 240, 240);
+      SetC(G, QPaletteWindowText, 0, 0, 0);
+      SetC(G, QPaletteBase, 255, 255, 255);
+      SetC(G, QPaletteAlternateBase, 240, 240, 240);
+      SetC(G, QPaletteText, 0, 0, 0);
+      SetC(G, QPaletteButton, 240, 240, 240);
+      SetC(G, QPaletteButtonText, 0, 0, 0);
+      SetC(G, QPaletteLight, 255, 255, 255);
+      SetC(G, QPaletteMidlight, 227, 227, 227);
+      SetC(G, QPaletteDark, 160, 160, 160);
+      SetC(G, QPaletteMid, 190, 190, 190);
+      SetC(G, QPaletteShadow, 10, 10, 10);
+      SetC(G, QPaletteHighlight, 0, 120, 215);
+      SetC(G, QPaletteHighlightedText, 255, 255, 255);
+      SetC(G, QPaletteLink, 0, 120, 215);
+      SetC(G, QPaletteToolTipBase, 255, 255, 255);
+      SetC(G, QPaletteToolTipText, 0, 0, 0);
+      SetC(G, QPaletteBrightText, 255, 255, 255);
+    end;
+  end;
+
+begin
+  WS := 'Fusion';
+  StyleHandle := QApplication_setStyle(@WS);
+  P := QPalette_Create;
+  ApplyGroup(QPaletteActive);
+  ApplyGroup(QPaletteInactive);
+  QApplication_setPalette(P);
+end;
+{$endif linux}
+
 begin
   {
     app params
     --lua-dofile: always load lua modules from file
     --dump-loaded-modules: dump loaded modules ("ID Name") to log
     --dorestart-pid=9999: windows only, handle used to restart app
+    --config-dir=PATH: override config/data/cache root (unix, portable mode;
+      also FMD2_CONFIG_DIR env; parsed in FMDOptions.doInitialization)
   }
 
   {$ifdef windows}
@@ -146,7 +226,13 @@ begin
       EnableLogging := ReadBool('logger', 'Enabled', False);
       if EnableLogging then
       begin
+        // unix: relative names resolve to the XDG cache dir, not the
+        // (possibly read-only) program dir; windows: unchanged
+        {$IFDEF UNIX}
+        LogFileName := ExpandFileNameUTF8(ReadString('logger', 'LogFileName', DEFAULT_LOG_FILE), ExtractFilePath(DEFAULT_LOG_FILE));
+        {$ELSE}
         LogFileName := ExpandFileNameUTF8(ReadString('logger', 'LogFileName', DEFAULT_LOG_FILE), FMD_DIRECTORY);
+        {$ENDIF}
       end;
     finally
       Free;
@@ -260,17 +346,35 @@ begin
     DLLWebPName := FMD_DIRECTORY + DLLWebPName;
   end;
 
+  {$ifdef windows}
+  // dark style: Windows-API hook; on Linux Qt6 uses the system/KDE theme
   Case iDarkMode of
      0:  PreferredAppMode := pamAllowDark;
      1:  PreferredAppMode := pamForceDark;
      2:  PreferredAppMode := pamForceLight;
   end;
-
-  Application.Scaled := True;
   uMetaDarkStyle.ApplyMetaDarkStyle(DefaultDark);
+  {$endif}
+  Application.Scaled := True;
   Application.Initialize;
+  // Without a usable screen (disconnected outputs, headless session) LCL's
+  // TPopupNotifier crashes with a range check on negative widths — fail clean.
+  if Screen.Width < 100 then
+  begin
+    WriteLn(StdErr, 'fmd: no usable display (Screen.Width=', Screen.Width,
+      '). Connect a monitor or run headless with QT_QPA_PLATFORM=offscreen.');
+    Halt(1);
+  end;
+  {$ifdef linux}
+  // honor the in-app Theme combo (0 System = follow KDE, 1 Dark, 2 Light);
+  // must run after widgetset init (QApplication exists) and before forms
+  if iDarkMode in [1, 2] then
+    ApplyQtForcePalette(iDarkMode = 1);
+  {$endif}
   Application.CreateForm(TMainForm, MainForm);
+  {$ifdef windows}
   MainForm.winBuildNumber := g_buildNumber;
+  {$endif}
   Application.CreateForm(TFormCheckModules, FormCheckModules);
   Application.Run;
 end.

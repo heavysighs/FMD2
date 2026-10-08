@@ -58,6 +58,11 @@ const
 
 implementation
 
+{$ifndef windows}
+uses
+  process, MultiLog;
+{$endif}
+
 { uMisc }
 
 function BrackText(const S: String): String;
@@ -456,11 +461,12 @@ begin
   except
     on E: Exception do
     begin
-      WriteLog_E('RunExternalProcess.Error '#13#10 +
+      // upstream {$else} branch referenced WriteLog_E/GetStackTraceInfo which
+      // exist nowhere (never compiled); log via MultiLog like the rest of FMD
+      Logger.SendError('RunExternalProcess.Error '#13#10 +
         'Executable: ' + Exe + #13#10 +
         'Parameters: ' + StringsToCommandLine(Params) + #13#10 +
-        'Message   : ' + E.Message + #13#10 +
-        GetStackTraceInfo);
+        'Message   : ' + E.Message);
     end;
   end;
   Process.Free;

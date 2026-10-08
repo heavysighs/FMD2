@@ -17,14 +17,14 @@ uses
   {$else}
   FakeActiveX,
   {$endif}
-  Classes, SysUtils, Forms, Controls, Graphics, Dialogs, StdCtrls, LCLType,
+  Classes, SysUtils, Math, Forms, Controls, Graphics, Dialogs, StdCtrls, LCLType,
   ExtCtrls, ComCtrls, Buttons, Spin, Menus, VirtualTrees, RichMemo, simpleipc, process,
   lclproc, types, LCLIntf, EditBtn, GroupedEdit, PairSplitter, MultiLog,
   FileChannel, FileUtil, LazStringUtils, TAGraph, TASources, TASeries, TATools,
   AnimatedGif, uBaseUnit, uDownloadsManager, uFavoritesManager,
   uSilentThread, uMisc, uGetMangaInfosThread, frmDropTarget, frmAccountManager,
   frmAccountSet, frmWebsiteOptionCustom, frmCustomColor, frmLogger, frmTransferFavorites,
-  frmLuaModulesUpdater, CheckUpdate, DBDataProcess, uDarkStyleParams, uWin32WidgetSetDark,
+  frmLuaModulesUpdater, CheckUpdate, DBDataProcess, uDarkStyleParams{$ifdef windows}, uWin32WidgetSetDark{$endif},
   SimpleTranslator, httpsendthread, DateUtils, SimpleException, uCustomControls,
   uCustomControlsMultiLog, ImageMagickManager, frmCheckModules;
 
@@ -786,6 +786,9 @@ type
     procedure AddSilentThread(URL: string; MetaDataType: TMetaDataType); overload;
     procedure AddSilentThread(URL: string); overload;
 
+    // T044: LCL native external drop (files/URLs) onto the main window
+    procedure FormDropFiles(Sender: TObject; const FileNames: array of String);
+
     // Set TRichMemo About text attributes
     procedure SetAboutTextAttributes;
 
@@ -1024,7 +1027,7 @@ implementation
 
 uses
   {$ifdef windows}
-  WinAPI,
+  WinAPI, Windows, ActiveX, comobj,
   {$endif}
   frmImportFavorites, frmShutdownCounter, frmSelectDirectory,
   frmWebsiteSettings, WebsiteModules, uUpdateThread, FMDVars, RegExpr, sqlite3dyn, Clipbrd,
@@ -1067,6 +1070,172 @@ begin
   Result := CallWindowProc(PrevWndProc, Ahwnd, uMsg, WParam, LParam);
 end;
 {$endif}
+
+{$IFDEF WINDOWS}
+var
+  CF_HTML: TCLIPFORMAT = 0;
+
+function GetCF_HTML: TCLIPFORMAT;
+begin
+  if CF_HTML = 0 then
+    CF_HTML := RegisterClipboardFormat('HTML Format');
+  Result := CF_HTML;
+end;
+
+function MakeFormatEtc(const Fmt: TCLIPFORMAT): TFormatEtc;
+begin
+  Result.cfFormat := Fmt;
+  Result.ptd := nil;
+  Result.dwAspect := DVASPECT_CONTENT;
+  Result.lindex := -1;
+  Result.tymed := TYMED_HGLOBAL;
+end;
+
+function GetTextFromObj(const DataObj: IDataObject;
+  const Fmt: TCLIPFORMAT): String;
+var
+  Medium: TStgMedium;
+  PText: PChar;
+begin
+  if DataObj.GetData(MakeFormatEtc(Fmt), Medium) = S_OK then
+  begin
+    try
+      PText := GlobalLock(Medium.hGlobal);
+      try
+        Result := PText;
+      finally
+        GlobalUnlock(Medium.hGlobal);
+      end;
+    finally
+      ReleaseStgMedium(Medium);
+    end;
+  end
+  else
+  begin
+    Result := '';
+  end;
+end;
+
+function GetWideTextFromObj(const DataObj: IDataObject;
+  const Fmt: TCLIPFORMAT): String;
+var
+  Medium: TStgMedium;
+  PwText: PWideChar;
+begin
+  if DataObj.GetData(MakeFormatEtc(Fmt), Medium) = S_OK then
+  begin
+    try
+      PwText := GlobalLock(Medium.hGlobal);
+      try
+        Result := PwText;
+      finally
+        GlobalUnlock(Medium.hGlobal);
+      end;
+    finally
+      ReleaseStgMedium(Medium);
+    end;
+  end
+  else
+  begin
+    Result := '';
+  end;
+end;
+
+function ParseDataObj(const DataObj: IDataObject;
+  const Fmt: TClipboardFormat): String;
+begin
+  if Fmt = GetCF_HTML then
+  begin
+    Result := GetURLsFromHTML(GetTextFromObj(DataObj, Fmt));
+  end
+  else if Fmt = CF_UNICODETEXT then
+  begin
+    Result := GetWideTextFromObj(DataObj, Fmt);
+  end
+  else if Fmt = CF_TEXT then
+  begin
+    Result := GetTextFromObj(DataObj, Fmt);
+  end
+  else
+  begin
+    Result := '';
+  end;
+
+  Result := Trim(Result);
+end;
+{$ENDIF} // WINDOWS: OLE data-object helpers
+
+// Extract URLs from VirtualTreeView's external-drop data object.
+// Windows: OLE formats (moved here from frmDropTarget, T044). Non-Windows:
+// no OLE data — LCL native drops are routed via FormDropFiles instead.
+function GetDropURLs(const DataObject: IDataObject): string;
+{$IFDEF WINDOWS}
+var
+  Enum: IEnumFORMATETC;
+  FmtEtc: TFORMATETC;
+  url: String;
+
+  function GetDataObjectFormat(Fmt: TCLIPFORMAT): Boolean;
+  begin
+    Result := False;
+    Enum.Reset;
+
+    while Enum.Next(1, FmtEtc, nil) = S_OK do
+    begin
+      if FmtEtc.CfFormat = Fmt then
+      begin
+        url := ParseDataObj(DataObject, Fmt);
+        if url <> '' then
+        begin
+          Result := True;
+        end;
+
+        Break;
+      end;
+    end;
+  end;
+
+  function GetDataObjectFormats(Fmts: array of TCLIPFORMAT): Boolean;
+  var
+    i: Integer;
+  begin
+    Result := False;
+    if Length(Fmts) = 0 then
+    begin
+      Exit;
+    end;
+
+    for i := Low(Fmts) to High(Fmts) do
+    begin
+      if GetDataObjectFormat(Fmts[i]) then
+      begin
+        Result := True;
+        Break;
+      end;
+    end;
+  end;
+{$ENDIF}
+
+begin
+  Result := '';
+{$IFDEF WINDOWS}
+  if DataObject = nil then
+  begin
+    Exit;
+  end;
+
+  url := Result;
+  OleCheck(DataObject.EnumFormatEtc(DATADIR_GET, Enum));
+  if GetDataObjectFormats([
+      GetCF_HTML,
+      CF_UNICODETEXT,
+      CF_TEXT
+      ]) then
+  begin
+    Result := url;
+  end;
+{$ENDIF}
+end;
 
 procedure ChangeAllCursor(const ParentControl: TWinControl; const Cur: TCursor);
 var
@@ -1232,6 +1401,10 @@ begin
   {$endif}
   Application.OnQueryEndSession := @HandleApplicationQueryEndSession;
   Application.OnEndSession := @HandleApplicationEndSession;
+  // T044: LCL native drop target — links/files dropped anywhere on the
+  // main window are routed by hit-test (download/favorites lists)
+  AllowDropFiles := True;
+  OnDropFiles := @FormDropFiles;
 
   isStartup := True;
   isRunDownloadFilter := False;
@@ -1246,8 +1419,11 @@ begin
 
   if IsDarkModeEnabled then
   begin
+    // win32-only hook; on Linux Qt6 dark style comes from ApplyMetaDarkStyle
+    {$ifdef windows}
     TryEnforceDarkStyleForCtrl(rmAbout);
     TryEnforceDarkStyleForCtrl(rmInformation);
+    {$endif}
   end;
 
   // load about
@@ -3320,7 +3496,9 @@ end;
 procedure TMainForm.HandleApplicationQueryEndSession(var Cancel: Boolean);
 begin
   Cancel := False;
+  {$ifdef windows}
   ShutdownBlockReasonCreate(Handle, 'FMD: saving userdata');
+  {$endif}
 end;
 
 procedure TMainForm.HandleApplicationEndSession(Sender: TObject);
@@ -3331,7 +3509,9 @@ begin
     OptionRestartFMD := False;
     Close;
   finally
+    {$ifdef windows}
     ShutdownBlockReasonDestroy(Handle);
+    {$endif}
   end;
 end;
 
@@ -4575,9 +4755,8 @@ begin
             Brush.Color := CL_BarBrownGold;
           end;
       end;
-      Frame(BarRect);
-      BarRect.Inflate(-2,-2);
       GradientFill(BarRect, BlendColor(Brush.Color, CL_Bar, 128), Brush.Color, gdHorizontal);
+      Frame(BarRect);
     end;
     // text
     if DownloadInfo.Progress <> '' then
@@ -4669,6 +4848,69 @@ begin
   vtDownloadUpdateFilters;
 end;
 
+procedure TMainForm.FormDropFiles(Sender: TObject;
+  const FileNames: array of String);
+var
+  URLs: String;
+  P: TPoint;
+  C: TControl;
+
+  function HitTest(const ScreenPt: TPoint; AWin: TWinControl): TControl;
+  var
+    i: Integer;
+    c: TControl;
+    sp: TPoint;
+    sub: TControl;
+  begin
+    Result := nil;
+    for i := 0 to AWin.ControlCount - 1 do
+    begin
+      c := AWin.Controls[i];
+      if not c.Visible then
+        Continue;
+      sp := AWin.ClientToScreen(Point(c.Left, c.Top));
+      if (ScreenPt.X >= sp.X) and (ScreenPt.X < sp.X + c.Width) and
+        (ScreenPt.Y >= sp.Y) and (ScreenPt.Y < sp.Y + c.Height) then
+      begin
+        if c is TWinControl then
+        begin
+          sub := HitTest(ScreenPt, TWinControl(c));
+          if sub <> nil then
+            Result := sub
+          else
+            Result := c;
+        end
+        else
+          Result := c;
+        Exit;
+      end;
+    end;
+  end;
+
+begin
+  URLs := frmDropTarget.ExtractURLsFromDroppedFiles(FileNames);
+  if URLs = '' then
+    Exit;
+
+  P := Mouse.CursorPos;
+  C := HitTest(P, Self);
+  while C <> nil do
+  begin
+    if C = vtDownload then
+    begin
+      AddSilentThread(URLs, MD_DownloadAll);
+      Exit;
+    end
+    else if C = vtFavorites then
+    begin
+      AddSilentThread(URLs, MD_AddToFavorites);
+      Exit;
+    end;
+    C := C.Parent;
+  end;
+  // dropped elsewhere on the main window: no action (upstream had none)
+end;
+
 procedure TMainForm.vtDownloadDragDrop(Sender : TBaseVirtualTree;
   Source : TObject; DataObject : IDataObject; Formats : TFormatArray;
   Shift : TShiftState; const Pt : TPoint; var Effect : LongWord;
@@ -4683,7 +4925,7 @@ begin
   end
   else
   begin
-    AddSilentThread(frmDropTarget.GetDropURLs(DataObject), MD_DownloadAll);
+    AddSilentThread(GetDropURLs(DataObject), MD_DownloadAll);
   end;
 end;
 
@@ -4925,7 +5167,7 @@ procedure TMainForm.vtFavoritesDragDrop(Sender: TBaseVirtualTree;
   Source: TObject; DataObject: IDataObject; Formats: TFormatArray;
   Shift: TShiftState; const Pt: TPoint; var Effect: LongWord; Mode: TDropMode);
 begin
-  AddSilentThread(frmDropTarget.GetDropURLs(DataObject), MD_AddToFavorites);
+  AddSilentThread(GetDropURLs(DataObject), MD_AddToFavorites);
 end;
 
 procedure TMainForm.vtFavoritesDragOver(Sender: TBaseVirtualTree;
@@ -6914,7 +7156,9 @@ begin
   if AvailableLanguages.Count = 0 then Exit;
   if cbLanguages.ItemIndex < 0 then Exit;
   if cbLanguages.ItemIndex >= AvailableLanguages.Count then Exit;
+  {$ifdef windows}
   if winBuildNumber < 17763 then cbDarkmode.Enabled := False else cbDarkmode.Enabled := True;
+  {$endif}
   if SimpleTranslator.LastSelected <> AvailableLanguages.Names[cbLanguages.ItemIndex] then
   begin
     // TCombobox.Items will be cleared upon changing language,

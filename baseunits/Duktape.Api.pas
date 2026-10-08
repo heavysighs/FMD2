@@ -13,7 +13,11 @@ type MarshaledAString = PAnsiChar;
 
 const
   {$IFDEF FPC}
+  {$IFDEF WINDOWS}
   LIB_DUKTAPE = 'libduktape.dll';
+  {$ELSE}
+  LIB_DUKTAPE = 'libduktape.so'; // T022: distro soname (duktape pkg), not bundled name
+  {$ENDIF}
   PREFIX = '';
   {$ELSE}
   {$IF Defined(WIN32)}
@@ -1418,6 +1422,13 @@ const
 {$ENDIF}
 
 implementation
+
+{$IFNDEF WINDOWS}
+// static-linked duktape module-duktape extra (built by scripts/build-deps.sh);
+// system libduktape.so exports no duk_module_duktape_init, but JS require()
+// inside Duktape.ExecJS needs it. {$L} path is relative to this source file.
+{$L ../3rd/duktape-module/duk_module_duktape.o}
+{$ENDIF}
 
 function DUK_HIDDEN_SYMBOL(const AX: UTF8String): UTF8String; inline;
 begin

@@ -18,7 +18,7 @@ uses
   {$else}
   UTF8Process,
   {$endif}
-  SysUtils, Classes, Graphics, LazFileUtils, LConvEncoding,
+  SysUtils, Classes, Math, Graphics, LazFileUtils, LConvEncoding,
   strutils, dateutils, variants, base64, fpjson, jsonparser, jsonscanner,
   fgl, RegExpr, synautil, httpsend,
   synacode, MultiLog, FPimage, GZIPUtils, uMisc, httpsendthread, FMDOptions,
@@ -233,7 +233,6 @@ const
   MangaInfo_StatusCancelled = '3';
 
   FMDSupportedPackedOutputExt: array[0..3] of ShortString = ('.zip', '.cbz', '.pdf', '.epub');
-  {$ifdef windows}
   // MAX_PATH = 260
   // MAX_PATH - 12 - 1
   MAX_PATHDIR = 247;
@@ -244,7 +243,6 @@ const
   FMDMaxImageFilePath = 255;
   // if directory length is max_pathdir, the remaining allowed filename is 7
   // = 259 - fmd max file extension - 1
-  {$endif}
 
 
   // custom rename
@@ -527,6 +525,7 @@ function HTMLDecode(const AStr: String): String;
 
 function RemoveSymbols(const input: String): String;
 function CorrectPathSys(const Path: String): String;
+function IsWindowsStylePath(const Path: String): Boolean;
 function RemovePathDelim(const Path: string): string;
 
 function FixWhiteSpace(const S: String): String;
@@ -1473,6 +1472,16 @@ begin
   end;
 end;
 
+function IsWindowsStylePath(const Path: String): Boolean;
+var
+  s: String;
+begin
+  s := Trim(Path);
+  Result := (Length(s) >= 2) and (s[2] = ':') and (UpCase(s[1]) in ['A'..'Z']);
+  if not Result then
+    Result := (Length(s) >= 2) and (s[1] = '\') and (s[2] = '\');
+end;
+
 function CorrectPathSys(const Path: String): String;
 {$IFDEF WINDOWS}
 var
@@ -1494,6 +1503,8 @@ begin
     Result := UTF8Encode(s);
   end;
   {$ELSE}
+  if IsWindowsStylePath(Result) then
+    Exit;
   Result := ExpandFileNameUTF8(TrimFilename(Path), FMD_DIRECTORY);
   {$ENDIF}
   Result := AppendPathDelim(Trim(Result));

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=FMD2
+GenericName=Manga Downloader
+Comment=Manage and download manga from various websites
+Exec=fmd %U
+Icon=fmd2
+Terminal=false
+Categories=Network;Utility;
+StartupWMClass=fmd
+Keywords=manga;anime;download;

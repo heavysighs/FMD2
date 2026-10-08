@@ -1257,6 +1257,8 @@ var
   i: Integer;
   Titles: array[0..1] of TFieldValuePair;
 begin
+  if not FQuery.Active then
+    OpenTable(FTableName, True); // AddData/CloseTable leave the query closed
   if FQuery.Active then
   begin
     try

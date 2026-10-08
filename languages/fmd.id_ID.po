@@ -648,6 +648,12 @@ msgstr ""
 "ImageMagick telah diaktifkan!\n"
 "Pengaturan berikut telah dinonaktifkan karena ImageMagick lebih diutamakan."
 
+#: md.no_usable_display
+#, object-pascal-format
+msgctxt "md.no_usable_display"
+msgid "fmd: no usable display (Screen.Width=%d). Connect a monitor or run headless with QT_QPA_PLATFORM=offscreen."
+msgstr "fmd: tidak ada tampilan yang dapat digunakan (Screen.Width=%d). Sambungkan monitor atau jalankan program tanpa antarmuka dengan QT_QPA_PLATFORM=offscreen."
+
 #: selfupdater.rs_buttoncancel
 msgctxt "selfupdater.rs_buttoncancel"
 msgid "Abort"

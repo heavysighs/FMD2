@@ -112,6 +112,9 @@ end;
 
 procedure TSelfUpdaterThread.Execute;
 begin
+{$IFNDEF WINDOWS}
+  Exit; // FR-023: no self-updater on Linux, updates via package manager
+{$ENDIF}
   DownloadSuccess := False;
   if UpdateURL = '' then
     Exit;

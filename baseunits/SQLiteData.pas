@@ -115,7 +115,8 @@ type
     procedure EndUpdate; inline;
     procedure AppendSQL(const SQL:string); inline;
     procedure AppendSQLSafe(const SQL:string); inline;
-    procedure FlushSQL(const UseQueue:Boolean=True); inline;
+    // no inline: FPC 3.2.2 internal AV at delphi-mode call sites (uFavoritesManager)
+    procedure FlushSQL(const UseQueue:Boolean=True);
     procedure FlushSQLSafe; inline;
     procedure Commit(const UseQueue:Boolean=True);
   end;

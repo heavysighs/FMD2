@@ -16,7 +16,6 @@ type
   protected
     FHandle: Plua_State;
     FLoadedChunks: TStringList;
-    FLoadedObjects: TStringList;
     FCallFunctionCount: Cardinal;
     procedure NewHandle;
     procedure FreeHandle;
@@ -54,7 +53,6 @@ begin
     FHandle := nil;
   end;
   FLoadedChunks.Clear;
-  FLoadedObjects.Clear;
 end;
 
 constructor TLuaHandler.Create;
@@ -70,7 +68,6 @@ constructor TLuaHandler.Create;
   end;
 begin
   FLoadedChunks := createlist;
-  FLoadedObjects := createlist;
   NewHandle;
 end;
 
@@ -78,7 +75,6 @@ destructor TLuaHandler.Destroy;
 begin
   FreeHandle;
   FLoadedChunks.Free;
-  FLoadedObjects.Free;
   inherited Destroy;
 end;
 
@@ -115,18 +111,10 @@ end;
 
 procedure TLuaHandler.LoadObject(const AName: String;
   const AObject: TObject; const AddMetaTable: TluaClassAddMetaTable);
-var
-  i: Integer = -1;
 begin
-  if FLoadedObjects.Find(AName, i) then
-  begin
-    if FLoadedObjects.Objects[i] = AObject then
-      Exit
-    else
-      FLoadedObjects.Delete(i);
-  end;
+  // always re-push: a freed object pointer can be reused by a new instance,
+  // so skipping on pointer equality would keep a stale metatable (use-after-free)
   luaClassPushObject(FHandle, AObject, AName, False, AddMetaTable);
-  FLoadedObjects.AddObject(AName, AObject);
   if (AObject is THTTPSendThread) and (TLuaHandler(THTTPSendThread(AObject).LuaHandler) <> self) then
     THTTPSendThread(AObject).LuaHandler := Self;
 end;

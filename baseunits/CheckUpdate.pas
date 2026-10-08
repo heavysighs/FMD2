@@ -102,6 +102,9 @@ procedure TCheckUpdateThread.Execute;
 var
   fmd_target, changelog_url: String;
 begin
+{$IFNDEF WINDOWS}
+  Exit; // FR-023: no in-app update check on Linux, updates via package manager
+{$ENDIF}
   FNewVersionString := '';
   FUpdateURL := '';
   FChangelog := '';

@@ -1,0 +1,48 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Arch Linux · Lazarus · Qt6
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install toolchain and libraries
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed \
+            base-devel git curl python3 fakeroot \
+            fpc lazarus qt6pas \
+            sqlite openssl pcre2 libwebp brotli zstd \
+            lua54 duktape 7zip
+
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          useradd --create-home builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          runuser -u builder -- ./scripts/build-deps.sh
+          runuser -u builder -- lazbuild \
+            --lazarusdir=/usr/lib/lazarus \
+            --build-mode=Linux --widgetset=qt6 \
+            mangadownloader/md.lpi
+          runuser -u builder -- bash -c 'cd packaging/arch && makepkg -f --noconfirm'
+
+      - name: Upload fmd binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: fmd-linux-x86_64
+          path: |
+            bin/x86_64-linux/fmd
+            bin/x86_64-linux/fmd.dbg
+
+      - name: Upload Arch package
+        uses: actions/upload-artifact@v4
+        with:
+          name: fmd2-arch-package
+          path: packaging/arch/*.pkg.tar.zst

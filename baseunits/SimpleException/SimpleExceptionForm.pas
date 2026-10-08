@@ -28,7 +28,7 @@ uses
   {$ifdef windows}
   windows,
   {$endif}
-  Forms, Controls, StdCtrls, ExtCtrls, Buttons, Classes;
+  Math, Forms, Controls, StdCtrls, ExtCtrls, Buttons, Classes;
 
 type
 

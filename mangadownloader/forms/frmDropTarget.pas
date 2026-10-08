@@ -5,14 +5,14 @@ unit frmDropTarget;
 interface
 
 uses
-  Classes, Windows, SysUtils, ActiveX, comobj, Forms, Controls, uDarkStyleParams,
+  Classes, SysUtils, Forms, Controls, uDarkStyleParams,
   ExtCtrls, Menus, LCLType, DefaultTranslator, uBaseUnit, XQueryEngineHTML;
 
 type
 
   { TFormDropTarget }
 
-  TFormDropTarget = class(TForm, IDropTarget)
+  TFormDropTarget = class(TForm)
     ImResize: TImage;
     ImDropIcon: TImage;
     MenuItem1: TMenuItem;
@@ -24,6 +24,7 @@ type
     procedure FormClose(Sender: TObject; var CloseAction: TCloseAction);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
+    procedure FormDropFiles(Sender: TObject; const FileNames: array of String);
     procedure FormMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Integer);
     procedure FormMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
@@ -40,25 +41,16 @@ type
     { private declarations }
     md: Boolean;
     x0, y0: Integer;
-    FCanDrop: Boolean;
-    // IDropTarget
-    function CursorEffect(const AllowedEffects: Cardinal;
-      const KeyState: Integer): Cardinal;
-    function CanDrop(const DataObj: IDataObject): Boolean;
-    function DragEnter(const dataObj: IDataObject; grfKeyState: DWORD;
-      {%H-}pt: TPoint; var dwEffect: DWORD): HResult; stdcall;
-    function {%H-}DragOver(grfKeyState: DWORD; {%H-}pt: TPoint;
-      var dwEffect: DWORD): HResult; stdcall;
-    function DragLeave: HResult; stdcall;
-    function Drop(const dataObj: IDataObject; {%H-}grfKeyState: DWORD;
-      {%H-}pt: TPoint; var {%H-}dwEffect: DWORD): HResult; stdcall;
   protected
-    procedure CreateParams(var Params: TCreateParams); override;
   public
     { public declarations }
   end;
 
-  function GetDropURLs(const DataObject: IDataObject): string;
+  // T044: LCL-native drop extraction (was OLE IDropTarget / ActiveX).
+  // Works for browser link drags (text/uri-list handed over as "paths"),
+  // plus dropped .html/.htm (anchor hrefs) and .txt (one URL per line) files.
+  function GetURLsFromHTML(const S: String): String;
+  function ExtractURLsFromDroppedFiles(const FileNames: array of String): String;
 
 var
   FormDropTarget: TFormDropTarget;
@@ -74,75 +66,11 @@ implementation
 uses
   frmMain;
 
-var
-  CF_HTML: TCLIPFORMAT;
-
 {$R *.lfm}
-
-function MakeFormatEtc(const Fmt: TCLIPFORMAT): TFormatEtc;
-begin
-  Result.cfFormat := Fmt;
-  Result.ptd := nil;
-  Result.dwAspect := DVASPECT_CONTENT;
-  Result.lindex := -1;
-  Result.tymed := TYMED_HGLOBAL;
-end;
-
-function GetTextFromObj(const DataObj: IDataObject;
-  const Fmt: TCLIPFORMAT): String;
-var
-  Medium: TStgMedium;
-  PText: PChar;
-begin
-  if DataObj.GetData(MakeFormatEtc(Fmt), Medium) = S_OK then
-  begin
-    Assert(Medium.tymed = MakeFormatEtc(Fmt).tymed);
-    try
-      PText := GlobalLock(Medium.hGlobal);
-      try
-        Result := PText;
-      finally
-        GlobalUnlock(Medium.hGlobal);
-      end;
-    finally
-      ReleaseStgMedium(Medium);
-    end;
-  end
-  else
-  begin
-    Result := '';
-  end;
-end;
-
-function GetWideTextFromObj(const DataObj: IDataObject;
-  const Fmt: TCLIPFORMAT): String;
-var
-  Medium: TStgMedium;
-  PwText: PWideChar;
-begin
-  if DataObj.GetData(MakeFormatEtc(Fmt), Medium) = S_OK then
-  begin
-    Assert(Medium.tymed = MakeFormatEtc(Fmt).tymed);
-    try
-      PwText := GlobalLock(Medium.hGlobal);
-      try
-        Result := PwText;
-      finally
-        GlobalUnlock(Medium.hGlobal);
-      end;
-    finally
-      ReleaseStgMedium(Medium);
-    end;
-  end
-  else
-  begin
-    Result := '';
-  end;
-end;
 
 function GetURLsFromHTML(const S: String): String;
 var
-  URls: TStringList;
+  URLs: TStringList;
 begin
   Result := S;
   if S = '' then
@@ -152,99 +80,72 @@ begin
 
   URLs := TStringList.Create;
   try
-    XPathStringAll('//a[not(starts-with(@href,"javascript:"))]/@href', S, URls);
-    RemoveDuplicateStrings(URls);
-    Result := URls.Text
+    XPathStringAll('//a[not(starts-with(@href,"javascript:"))]/@href', S, URLs);
+    RemoveDuplicateStrings(URLs);
+    Result := URLs.Text
   finally
-    URls.Free;
+    URLs.Free;
   end;
 end;
 
-function ParseDataObj(const DataObj: IDataObject;
-  const Fmt: TClipboardFormat): String;
-begin
-  if Fmt = CF_HTML then
-  begin
-    Result := GetURLsFromHTML(GetTextFromObj(DataObj, Fmt));
-  end
-  else if Fmt = CF_UNICODETEXT then
-  begin
-    Result := GetWideTextFromObj(DataObj, Fmt);
-  end
-  else if Fmt = CF_TEXT then
-  begin
-    Result := GetTextFromObj(DataObj, Fmt);
-  end
-  else
-  begin
-    Result := '';
-  end;
-
-  Result := Trim(Result);
-end;
-
-function GetDropURLs(const DataObject: IDataObject): string;
+function ExtractURLsFromDroppedFiles(const FileNames: array of String): String;
 var
-  Enum: IEnumFORMATETC;
-  FmtEtc: TFORMATETC;
-  url: String;
+  URLs, Doc: TStringList;
+  i: Integer;
+  fn, ext: String;
 
-  function GetDataObjectFormat(Fmt: TCLIPFORMAT): Boolean;
-  begin
-    Result := False;
-    Enum.Reset;
-
-    while Enum.Next(1, FmtEtc, nil) = S_OK do
-    begin
-      if FmtEtc.CfFormat = Fmt then
-      begin
-        url := ParseDataObj(DataObject, Fmt);
-        if url <> '' then
-        begin
-          Result := True;
-        end;
-
-        Break;
-      end;
-    end;
-  end;
-
-  function GetDataObjectFormats(Fmts: array of TCLIPFORMAT): Boolean;
+  procedure AddLines(const AList: TStringList);
   var
-    i: Integer;
+    j: Integer;
+    line: String;
   begin
-    Result := False;
-    if Length(Fmts) = 0 then
+    for j := 0 to AList.Count - 1 do
     begin
-      Exit;
-    end;
-
-    for i := Low(Fmts) to High(Fmts) do
-    begin
-      if GetDataObjectFormat(Fmts[i]) then
-      begin
-        Result := True;
-        Break;
-      end;
+      line := Trim(AList[j]);
+      if line <> '' then
+        URLs.Add(line);
     end;
   end;
 
 begin
   Result := '';
-  if DataObject = nil then
-  begin
-    Exit;
-  end;
-
-  url := Result;
-  OleCheck(DataObject.EnumFormatEtc(DATADIR_GET, Enum));
-  if GetDataObjectFormats([
-      CF_HTML,
-      CF_UNICODETEXT,
-      CF_TEXT
-      ]) then
-  begin
-    Result := url;
+  URLs := TStringList.Create;
+  try
+    for i := Low(FileNames) to High(FileNames) do
+    begin
+      fn := FileNames[i];
+      if (Copy(fn, 1, 7) = 'http://') or (Copy(fn, 1, 8) = 'https://') then
+        URLs.Add(fn) // browsers pass link drags over as uri-list "paths"
+      else if FileExists(fn) then
+      begin
+        ext := LowerCase(ExtractFileExt(fn));
+        if (ext = '.htm') or (ext = '.html') then
+        begin
+          Doc := TStringList.Create;
+          try
+            Doc.LoadFromFile(fn);
+            Doc.Text := GetURLsFromHTML(Doc.Text);
+            AddLines(Doc);
+          finally
+            Doc.Free;
+          end;
+        end
+        else if ext = '.txt' then
+        begin
+          Doc := TStringList.Create;
+          try
+            Doc.LoadFromFile(fn);
+            AddLines(Doc);
+          finally
+            Doc.Free;
+          end;
+        end;
+      end;
+    end;
+    RemoveDuplicateStrings(URLs);
+    Result := URLs.Text;
+  finally
+    URLs.Free;
   end;
 end;
 
@@ -252,13 +153,20 @@ end;
 
 procedure TFormDropTarget.FormCreate(Sender: TObject);
 begin
-  ShowWindow(Self.Handle, SW_HIDE);
-  SetWindowLong(Self.Handle, GWL_EXSTYLE, getWindowLong(Self.Handle,
-    GWL_EXSTYLE) or WS_EX_TOOLWINDOW);
-  ShowWindow(Self.Handle, SW_SHOW);
-  OleInitialize(nil);
-  OleCheck(RegisterDragDrop(Handle, Self));
+  // T044: LCL native file/URL drop (replaces ActiveX RegisterDragDrop)
+  AllowDropFiles := True;
+  OnDropFiles := @FormDropFiles;
   AlphaBlend := True;
+end;
+
+procedure TFormDropTarget.FormDropFiles(Sender: TObject;
+  const FileNames: array of String);
+var
+  s: String;
+begin
+  s := ExtractURLsFromDroppedFiles(FileNames);
+  if (s <> '') and Assigned(OnDropChekout) then
+    OnDropChekout(s);
 end;
 
 procedure TFormDropTarget.FormClose(Sender: TObject;
@@ -275,8 +183,6 @@ end;
 
 procedure TFormDropTarget.FormDestroy(Sender: TObject);
 begin
-  RevokeDragDrop(Handle);
-  OleUninitialize;
   FormDropTarget := nil;
 end;
 
@@ -365,85 +271,5 @@ begin
   miDownloadAll.Checked := MainForm.rgDropTargetMode.ItemIndex = 0;
   miAddToFavorites.Checked := not miDownloadAll.Checked;
 end;
-
-function TFormDropTarget.CursorEffect(const AllowedEffects: Cardinal;
-  const KeyState: Integer): Cardinal;
-begin
-  Result := DROPEFFECT_NONE;
-  if FCanDrop then
-  begin
-    if (KeyState and MK_SHIFT = MK_SHIFT) and (DROPEFFECT_MOVE and AllowedEffects = DROPEFFECT_MOVE) then
-    begin
-      Result := DROPEFFECT_MOVE;
-    end
-    else if (DROPEFFECT_COPY and AllowedEffects = DROPEFFECT_COPY) then
-    begin
-      Result := DROPEFFECT_COPY;
-    end;
-  end;
-end;
-
-function TFormDropTarget.CanDrop(const DataObj: IDataObject): Boolean;
-begin
-  Result := DataObj.QueryGetData(MakeFormatEtc(CF_HTML)) = S_OK;
-  if not Result then
-  begin
-    Result := DataObj.QueryGetData(MakeFormatEtc(CF_UNICODETEXT)) = S_OK;
-  end;
-
-  if not Result then
-  begin
-    Result := DataObj.QueryGetData(MakeFormatEtc(CF_TEXT)) = S_OK;
-  end;
-end;
-
-function TFormDropTarget.DragEnter(const dataObj: IDataObject; grfKeyState: DWORD;
-  pt: TPoint; var dwEffect: DWORD): HResult; stdcall;
-begin
-  FCanDrop := CanDrop(dataObj);
-  if FCanDrop then
-  begin
-    dwEffect := DROPEFFECT_LINK;
-  end;
-
-  Result := S_OK;
-end;
-
-function TFormDropTarget.DragOver(grfKeyState: DWORD; pt: TPoint;
-  var dwEffect: DWORD): HResult; stdcall;
-begin
-  if FCanDrop then
-  begin
-    dwEffect := DROPEFFECT_LINK;
-  end;
-
-  Result := S_OK;
-end;
-
-function TFormDropTarget.DragLeave: HResult; stdcall;
-begin
-  Result := S_OK;
-end;
-
-function TFormDropTarget.Drop(const dataObj: IDataObject; grfKeyState: DWORD;
-  pt: TPoint; var dwEffect: DWORD): HResult; stdcall;
-begin
-  if Assigned(OnDropChekout) then
-  begin
-      OnDropChekout(GetDropURLs(dataObj));
-  end;
-
-  Result := S_OK;
-end;
-
-procedure TFormDropTarget.CreateParams(var Params: TCreateParams);
-begin
-  inherited CreateParams(Params);
-  Params.ExStyle := Params.ExStyle and WS_EX_TOOLWINDOW and (not WS_EX_APPWINDOW);
-  Params.WndParent := GetDesktopWindow;
-end;
-
-initialization
-  CF_HTML := RegisterClipboardFormat('HTML Format');
 
 end.
