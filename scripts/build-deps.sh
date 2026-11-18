@@ -103,24 +103,24 @@ echo "gen   $GEN/laz_synapse.lpk ($(grep -c '<Item' <<<"$(grep -A200 '<Files' "$
 #      (repo ships units/qt, units/gtk2 …) → FakeActiveX not found on qt6.
 vt_lpk="$THIRD/virtualtreeview/virtualtreeview_package.lpk"
 if grep -q 'Value="units/\$(LCLWidgetType)"' "$vt_lpk"; then
-  sed -i 's|Value="units/\$(LCLWidgetType)"|Value="units/$(LCLWidgetType);units/qt;units/gtk2"|' "$vt_lpk"
+  sed -i.fmd2bak 's|Value="units/\$(LCLWidgetType)"|Value="units/$(LCLWidgetType);units/qt;units/gtk2"|' "$vt_lpk"
   echo "patch virtualtreeview_package.lpk: add units/qt,units/gtk2 fallback"
 fi
 # UP1b: include/intf/$(LCLWidgetType) has no qt6 dir either (vtgraphicsi.inc …)
 if grep -q 'Value="include/intf/\$(LCLWidgetType);units;include/intf"' "$vt_lpk"; then
-  sed -i 's|Value="include/intf/\$(LCLWidgetType);units;include/intf"|Value="include/intf/$(LCLWidgetType);units;include/intf;include/intf/qt;include/intf/gtk2"|' "$vt_lpk"
+  sed -i.fmd2bak 's|Value="include/intf/\$(LCLWidgetType);units;include/intf"|Value="include/intf/$(LCLWidgetType);units;include/intf;include/intf/qt;include/intf/gtk2"|' "$vt_lpk"
   echo "patch virtualtreeview_package.lpk: add include/intf/qt,gtk2 fallback"
 fi
 # UP1c: include/intf/qt/vtgraphicsi.inc hard-references unit `qt4` (dead since
 #       Lazarus 2.x; only the `uses` line mentions it) → retarget to qt6.
 if grep -q 'qt4, qtobjects' "$THIRD/virtualtreeview/include/intf/qt/vtgraphicsi.inc"; then
-  sed -i 's|qt4, qtobjects|qt6, qtobjects|' "$THIRD/virtualtreeview/include/intf/qt/vtgraphicsi.inc"
+  sed -i.fmd2bak 's|qt4, qtobjects|qt6, qtobjects|' "$THIRD/virtualtreeview/include/intf/qt/vtgraphicsi.inc"
   echo "patch virtualtreeview include/intf/qt/vtgraphicsi.inc: qt4 -> qt6"
 fi
 # UP3: VirtualTrees.pas — unqualified 3-arg Move() resolves to a 2-arg Classes
 #      Move in this FPC/scope; qualify as System.Move (3 call sites).
 if grep -q '[^m.]Move(FPositionToIndex\[' "$THIRD/virtualtreeview/VirtualTrees.pas"; then
-  sed -i 's|\([^m.]\)Move(FPositionToIndex\[|\1System.Move(FPositionToIndex[|g' "$THIRD/virtualtreeview/VirtualTrees.pas"
+  sed -i.fmd2bak 's|\([^m.]\)Move(FPositionToIndex\[|\1System.Move(FPositionToIndex[|g' "$THIRD/virtualtreeview/VirtualTrees.pas"
   echo "patch VirtualTrees.pas: Move(FPositionToIndex -> System.Move (3 sites)"
 fi
 # UP2: internettools.lpk: synapse (httpsend) not declared as dependency.
@@ -137,6 +137,10 @@ open(p, 'w').write(s.replace(old, new, 1))
 EOF
   echo "patch internettools.lpk: +RequiredPkgs laz_synapse"
 fi
+
+# sed -i above uses the portable -i.fmd2bak form (BSD sed on macOS requires
+# a suffix argument); drop the backup files it leaves behind.
+find "$THIRD" -name '*.fmd2bak' -delete 2>/dev/null || true
 
 # --- duk_module_duktape (duktape extras, MIT): system libduktape.so does not
 #     export duk_module_duktape_init, but JS require() inside Duktape.ExecJS
