@@ -44,7 +44,7 @@ jobs:
           find "$HOME/lazarus-dist" -name lazbuild -type f | head -3
 
       - name: Install native libraries
-        run: brew install openssl@3 sqlite3 libwebp brotli zstd pcre2 duktape lua sevenzip
+        run: brew install openssl@3 sqlite webp brotli zstd pcre2 duktape lua sevenzip
 
       - name: Locate lazbuild
         run: |
