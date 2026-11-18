@@ -4,6 +4,8 @@ name: Mojave Build (FMD2)
 # Cocoa widgetset. The branch is upstream master @ 9c8020d7 (2026-10-15)
 # plus the Linux port's cross-platform changes, plus a Darwin build mode
 # in mangadownloader/md.lpi that targets darwin/x86_64 with -WM10.14.
+# Toolchain: FPC 3.2.4rc1a + Lazarus 4.6 official macOS packages (LCL 4.6
+# satisfies md.lpi's LCL >= 3.8 requirement).
 
 on:
   push:
@@ -21,11 +23,25 @@ jobs:
         with:
           ref: mojave-fix
 
-      - name: Install Lazarus 3.8
-        uses: gcarq/setup-lazarus@v2
-        with:
-          lazarus-version: '3.8'
-          with-cache: false
+      - name: Install FPC + Lazarus 4.6 (official SourceForge packages)
+        # md.lpi requires LCL >= 3.8, so Homebrew's stale 3.6 cask and the
+        # (now deleted) gcarq/setup-lazarus action are both out. Lazarus 4.6
+        # ships as: an FPC dmg (compiler) + a Lazarus zip (IDE + FPC sources).
+        run: |
+          set -e
+          BASE='https://sourceforge.net/projects/lazarus/files/Lazarus%20macOS%20x86-64/Lazarus%204.6'
+          curl -fL -o /tmp/fpc.dmg "$BASE/fpc-3.2.4rc1a.intelarm64-macosx.dmg/download"
+          curl -fL -o /tmp/lazarus.zip "$BASE/lazarus-darwin-x86_64-4.6.zip/download"
+          mnt=$(mktemp -d)
+          hdiutil attach /tmp/fpc.dmg -mountpoint "$mnt" -nobrowse
+          pkg=$(find "$mnt" -name '*.pkg' -o -name '*.mpkg' | head -1)
+          echo "FPC installer package: $pkg"
+          sudo installer -pkg "$pkg" -target /
+          hdiutil detach "$mnt"
+          mkdir -p "$HOME/lazarus-dist"
+          unzip -q /tmp/lazarus.zip -d "$HOME/lazarus-dist"
+          fpc -iV
+          find "$HOME/lazarus-dist" -name lazbuild -type f | head -3
 
       - name: Install native libraries
         run: brew install openssl@3 sqlite3 libwebp brotli zstd pcre2 duktape lua sevenzip
