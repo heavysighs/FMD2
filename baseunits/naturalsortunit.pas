@@ -38,7 +38,7 @@ uses
   Windows,
   {$ENDIF}
   Classes, SysUtils, Math
-  {$IFDEF LINUX}
+  {$IF DEFINED(LINUX) OR DEFINED(DARWIN)}
   , UnixType
   {$ENDIF}
   ;
