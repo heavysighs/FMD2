@@ -1071,10 +1071,12 @@ const
     {$ELSE}
     LIBCRYPTO_DLL = 'libcrypto-3.dll';
     {$ENDIF}
-  {$ELSEIF DEFINED(DARWIN)}
-    LIBCRYPTO_DLL = 'libcrypto.3.dylib';
   {$ELSE}
+    {$IFDEF DARWIN}
+    LIBCRYPTO_DLL = 'libcrypto.3.dylib';
+    {$ELSE}
     LIBCRYPTO_DLL = 'libcrypto.so.3';
+    {$ENDIF}
   {$ENDIF}
 
 function EVP_PKEY_new_raw_private_key(pkey_type: Integer; e: Pointer;
