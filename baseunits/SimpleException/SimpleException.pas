@@ -476,7 +476,7 @@ begin
       Result := 'Program exception!';
     Result := Result + LineEnding +
       FApplicationInfo + LineEnding +
-      'Thread ID         : ' + IntToStr(GetThreadID) + LineEnding +
+      'Thread ID         : ' + IntToStr(PtrUInt(GetThreadID)) + LineEnding +
       'Time              : ' + FormatDateTime('dd/mm/yyyy hh:nn:ss.zzz', Now) + LineEnding;
     if IgnoredExceptionList.Count > 0 then
     begin
@@ -671,7 +671,7 @@ begin
     'Build Time        : ' + GetBuildTime + LineEnding +
     'Path              : ' + ParamStr(0) + LineEnding +
     'Process ID        : ' + IntToStr(GetProcessID) + LineEnding +
-    'MainThread ID     : ' + IntToStr(MainThreadID);
+    'MainThread ID     : ' + IntToStr(PtrUInt(MainThreadID));
   if Assigned(Application) then
   begin
     FDefaultAppFlags := Application.Flags;
