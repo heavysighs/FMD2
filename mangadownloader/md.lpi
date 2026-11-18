@@ -29,7 +29,7 @@
       <Attributes pvaPrivateBuild="True"/>
       <StringTable Comments="https://github.com/dazedcat19/FMD2" FileDescription="Free Manga Downloader" LegalCopyright="©2015-2025" OriginalFilename="fmd.exe" ProductName="Free Manga Downloader" ProductVersion="$BuildMode()"/>
     </VersionInfo>
-    <BuildModes Count="7">
+    <BuildModes Count="8">
       <Item1 Name="Win32" Default="True"/>
       <Item2 Name="Win64">
         <CompilerOptions>
@@ -330,6 +330,52 @@
           </Other>
         </CompilerOptions>
       </Item7>
+      <Item8 Name="Darwin">
+        <CompilerOptions>
+          <Version Value="11"/>
+          <PathDelim Value="\"/>
+          <Target>
+            <Filename Value="..\bin\$(TargetCPU)-$(TargetOS)\fmd"/>
+          </Target>
+          <SearchPaths>
+            <IncludeFiles Value="$(ProjOutDir)"/>
+            <OtherUnitFiles Value="..\baseunits;..\baseunits\lua;..\baseunits\synapse;..\baseunits\SimpleException;..\baseunits\animatedgifs;..\baseunits\modules;forms"/>
+            <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
+          </SearchPaths>
+          <CodeGeneration>
+            <SmartLinkUnit Value="True"/>
+            <TargetCPU Value="x86_64"/>
+            <TargetOS Value="darwin"/>
+            <Optimizations>
+              <OptimizationLevel Value="2"/>
+              <VariablesInRegisters Value="True"/>
+            </Optimizations>
+          </CodeGeneration>
+          <Linking>
+            <Debugging>
+              <GenerateDebugInfo Value="True"/>
+              <DebugInfoType Value="dsDwarf3"/>
+              <StripSymbols Value="False"/>
+              <UseExternalDbgSyms Value="True"/>
+            </Debugging>
+            <LinkSmart Value="True"/>
+          </Linking>
+          <Other>
+            <CustomOptions Value="-WM10.14"/>
+            <CompilerMessages>
+              <IgnoredMessages idx6058="True" idx3123="True"/>
+            </CompilerMessages>
+            <ExecuteBefore>
+              <Command Value="../scripts/git2revision.sh ../baseunits/revision.inc"/>
+              <CompileReasons Run="False"/>
+            </ExecuteBefore>
+            <ExecuteAfter>
+              <Command Value="mkdir -p ../bin/$(TargetCPU)-$(TargetOS)/languages &amp;&amp; cp -f ../languages/*.po ../bin/$(TargetCPU)-$(TargetOS)/languages/"/>
+              <CompileReasons Compile="False" Run="False"/>
+            </ExecuteAfter>
+          </Other>
+        </CompilerOptions>
+      </Item8>
       <SharedMatrixOptions Count="6">
         <Item1 ID="450276734607" Targets="#project" Modes="Win64 Debug,Win32 Debug,Win32 Debug Leaks,Win64 Debug Leaks" Value="-dDEBUGINFO"/>
         <Item2 ID="952607008458" Targets="#project" Modes="Win64 Debug Leaks,Win32 Debug Leaks" Value="-dDEVBUILD"/>

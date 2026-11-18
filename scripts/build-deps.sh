@@ -180,7 +180,7 @@ do register "$lpk"; done
 
 # --- Compile every package (Linux issues surface here, research R5) ----------
 echo
-echo "== compiling packages (widgetset qt6) =="
+echo "== compiling packages (widgetset ${WIDGETSET:-qt6}) =="
 fail=0
 for lpk in \
   "$GEN/laz_synapse.lpk" \
@@ -195,7 +195,7 @@ for lpk in \
   "$THIRD/customcontrols/Addon/MultiLog/customcontrols_addon_multilog.lpk" \
   "$THIRD/internettools/internettools.lpk"
 do
-  if $LAZBUILD --widgetset=qt6 "$lpk" >/tmp/build-deps-pkg.log 2>&1; then
+  if $LAZBUILD --widgetset=${WIDGETSET:-qt6} "$lpk" >/tmp/build-deps-pkg.log 2>&1; then
     echo "OK    $(basename "$lpk")"
   else
     echo "FAIL  $(basename "$lpk")"; tail -5 /tmp/build-deps-pkg.log; fail=1

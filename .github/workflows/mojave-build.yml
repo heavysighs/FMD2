@@ -1,0 +1,55 @@
+name: Mojave Build (FMD2)
+
+# Builds FMD2 for macOS 10.14 Mojave (Intel x86_64) with the Lazarus/FPC
+# Cocoa widgetset. The branch is upstream master @ 9c8020d7 (2026-10-15)
+# plus the Linux port's cross-platform changes, plus a Darwin build mode
+# in mangadownloader/md.lpi that targets darwin/x86_64 with -WM10.14.
+
+on:
+  push:
+    branches:
+      - mojave-fix
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build FMD2 (Darwin/Cocoa)
+    runs-on: macos-15-intel
+    steps:
+      - name: Checkout mojave-fix
+        uses: actions/checkout@v4
+        with:
+          ref: mojave-fix
+
+      - name: Install Lazarus 3.8
+        uses: gcarq/setup-lazarus@v2
+        with:
+          lazarus-version: '3.8'
+          with-cache: false
+
+      - name: Install native libraries
+        run: brew install openssl@3 sqlite3 libwebp brotli zstd pcre2 duktape lua sevenzip
+
+      - name: Locate lazbuild
+        run: |
+          LAZBIN=$(command -v lazbuild || find /Applications "$HOME" -name lazbuild -type f 2>/dev/null | head -1)
+          echo "lazbuild: $LAZBIN"
+          "$LAZBIN" --version || true
+          echo "LAZBIN=$LAZBIN" >> "$GITHUB_ENV"
+          echo "LAZARUSDIR=$(dirname "$LAZBIN")" >> "$GITHUB_ENV"
+
+      - name: Fetch and build Lazarus packages (Cocoa)
+        env:
+          WIDGETSET: cocoa
+        run: ./scripts/build-deps.sh
+
+      - name: Build FMD2 (Darwin mode)
+        run: |
+          "$LAZBIN" --lazarusdir="$LAZARUSDIR" --build-mode=Darwin --widgetset=cocoa mangadownloader/md.lpi
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: fmd2-darwin-x86_64
+          path: bin/x86_64-darwin/
+          retention-days: 30
