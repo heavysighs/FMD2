@@ -44,7 +44,23 @@ jobs:
           find "$HOME/lazarus-dist" -name lazbuild -type f | head -3
 
       - name: Install native libraries
-        run: brew install openssl@3 sqlite webp brotli zstd pcre2 duktape lua sevenzip
+        # No lua here: the app binds Lua 5.3 (lua53.pas), Homebrew only
+        # carries 5.4 now, so 5.3.6 is built from source in the next step.
+        run: brew install openssl@3 sqlite webp brotli zstd pcre2 duktape sevenzip
+
+      - name: Build Lua 5.3.6 dylib (targeting 10.14)
+        run: |
+          set -e
+          curl -fsSL -o /tmp/lua-5.3.6.tar.gz https://www.lua.org/ftp/lua-5.3.6.tar.gz
+          tar -xzf /tmp/lua-5.3.6.tar.gz -C /tmp
+          cd /tmp/lua-5.3.6
+          make macosx MACOSX_DEPLOYMENT_TARGET=10.14
+          cd src
+          cc -dynamiclib -mmacosx-version-min=10.14 \
+             -Wl,-all_load -Wl,-install_name,liblua5.3.dylib \
+             -o liblua5.3.dylib liblua.a -lm -ldl
+          sudo cp liblua5.3.dylib /usr/local/lib/
+          ls -l /usr/local/lib/liblua5.3.dylib
 
       - name: Locate lazbuild
         run: |

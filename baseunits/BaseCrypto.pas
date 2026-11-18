@@ -1071,6 +1071,8 @@ const
     {$ELSE}
     LIBCRYPTO_DLL = 'libcrypto-3.dll';
     {$ENDIF}
+  {$ELSEIF DEFINED(DARWIN)}
+    LIBCRYPTO_DLL = 'libcrypto.3.dylib';
   {$ELSE}
     LIBCRYPTO_DLL = 'libcrypto.so.3';
   {$ENDIF}

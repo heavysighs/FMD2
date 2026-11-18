@@ -361,7 +361,7 @@
             <LinkSmart Value="True"/>
           </Linking>
           <Other>
-            <CustomOptions Value="-WM10.14"/>
+            <CustomOptions Value="-WM10.14 -Fl/usr/local/opt/openssl@3/lib"/>
             <CompilerMessages>
               <IgnoredMessages idx6058="True" idx3123="True"/>
             </CompilerMessages>

@@ -15,6 +15,8 @@ const
   {$IFDEF FPC}
   {$IFDEF WINDOWS}
   LIB_DUKTAPE = 'libduktape.dll';
+  {$ELSEIF DEFINED(DARWIN)}
+  LIB_DUKTAPE = 'libduktape.dylib';
   {$ELSE}
   LIB_DUKTAPE = 'libduktape.so'; // T022: distro soname (duktape pkg), not bundled name
   {$ENDIF}

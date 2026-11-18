@@ -60,7 +60,7 @@ type
 
 
 const
-  PCRE2LibName {$IFDEF MSWINDOWS} = 'libpcre2-8.dll'{$ENDIF}{$IFDEF UNIX} = 'libpcre2-8.so'{$ENDIF};
+  PCRE2LibName {$IFDEF MSWINDOWS} = 'libpcre2-8.dll'{$ENDIF}{$IFDEF DARWIN} = 'libpcre2-8.dylib'{$ENDIF}{$IF DEFINED(UNIX) AND NOT DEFINED(DARWIN)} = 'libpcre2-8.so'{$ENDIF};
 
   { options }
   PCRE2_UTF             = $00080000;

@@ -102,6 +102,8 @@ interface
 const
 {$IFDEF MSWINDOWS}
    LUA_LIB_NAME = 'lua53.dll';
+{$ELSEIF DEFINED(DARWIN)}
+   LUA_LIB_NAME = 'liblua5.3.dylib';
 {$ELSE}
    LUA_LIB_NAME = 'liblua5.3.so';
 {$ENDIF}
