@@ -361,7 +361,7 @@
             <LinkSmart Value="True"/>
           </Linking>
           <Other>
-            <CustomOptions Value="-WM10.14 -Fl/usr/local/opt/openssl@3/lib"/>
+            <CustomOptions Value="-WM10.14 -Fl/usr/local/opt/openssl@3/lib -Fl/usr/local/lib -k-lcrypto -k-llua5.3 -k-lduktape -k-lpcre2-8"/>
             <CompilerMessages>
               <IgnoredMessages idx6058="True" idx3123="True"/>
             </CompilerMessages>
