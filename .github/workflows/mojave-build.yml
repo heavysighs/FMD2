@@ -53,6 +53,7 @@ jobs:
           "$LAZBIN" --version || true
           echo "LAZBIN=$LAZBIN" >> "$GITHUB_ENV"
           echo "LAZARUSDIR=$(dirname "$LAZBIN")" >> "$GITHUB_ENV"
+          echo "$(dirname "$LAZBIN")" >> "$GITHUB_PATH"
 
       - name: Fetch and build Lazarus packages (Cocoa)
         env:
