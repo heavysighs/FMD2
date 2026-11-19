@@ -151,10 +151,14 @@ jobs:
           # build it from source for 10.14 (same route Homebrew uses).
           curl -fL -o /tmp/7z-src.tar.xz https://www.7-zip.org/a/7z2501-src.tar.xz
           tar -xJf /tmp/7z-src.tar.xz -C /tmp
+          # 7-Zip 25.01 prefers timespec_get(), which macOS only added in
+          # 10.15; steer it to clock_gettime() (present since 10.12)
+          sed -i.fmd2bak 's/defined(TIME_UTC) && !defined(__ANDROID__)/defined(TIME_UTC) \&\& !defined(__ANDROID__) \&\& !defined(ZIP7_NO_timespec_get)/' /tmp/CPP/Windows/TimeUtils.cpp
+          grep -n 'ZIP7_NO_timespec_get' /tmp/CPP/Windows/TimeUtils.cpp
           cd /tmp/CPP/7zip/Bundles/Alone2
           make -j"$(sysctl -n hw.ncpu)" -f makefile.gcc \
-               CC="clang -mmacosx-version-min=10.14" \
-               CXX="clang++ -mmacosx-version-min=10.14"
+               CC="clang -mmacosx-version-min=10.14 -DZIP7_NO_timespec_get" \
+               CXX="clang++ -mmacosx-version-min=10.14 -DZIP7_NO_timespec_get"
           ZZBIN=$(find . -name 7zz -type f | head -1)
           echo "built 7zz: $ZZBIN"
           cp "$ZZBIN" "$HOME/mojave-libs/7zz"
