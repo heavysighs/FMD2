@@ -9,7 +9,8 @@ uses
 
 var
   WebPLibHandle: TLibHandle = 0;
-  DLLWebPName: String = {$IFDEF LINUX} 'libwebp.so' {$ELSE} 'libwebp.dll' {$ENDIF};
+  DLLWebPName: String = {$IFDEF WINDOWS} 'libwebp.dll' {$ELSE}
+                          {$IFDEF DARWIN} 'libwebp.dylib' {$ELSE} 'libwebp.so' {$ENDIF} {$ENDIF};
 
 function IsWebPModuleLoaded: Boolean;
 procedure InitWebPModule;

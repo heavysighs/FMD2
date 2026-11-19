@@ -35,7 +35,9 @@ PLIST="$APP/Contents/Info.plist"
 
 mkdir -p "$FW"
 cp "$LIBS/libcrypto.3.dylib" "$LIBS/libssl.3.dylib" "$LIBS/libduktape.dylib" \
-   "$LIBS/libpcre2-8.dylib" /usr/local/lib/liblua5.3.dylib "$FW/"
+   "$LIBS/libpcre2-8.dylib" "$LIBS/libwebp.dylib" "$LIBS/libsharpyuv.dylib" \
+   "$LIBS/libbrotlidec.dylib" "$LIBS/libbrotlicommon.dylib" "$LIBS/libzstd.dylib" \
+   /usr/local/lib/liblua5.3.dylib "$FW/"
 
 cp -R lua languages images "$APP/Contents/MacOS/"
 
@@ -46,7 +48,7 @@ fix_refs() {
   otool -L "$bin" | tail -n +2 | awk '{print $1}' | while read -r dep; do
     base="$(basename "$dep")"
     case "$base" in
-      libcrypto.3.dylib|libssl.3.dylib|liblua5.3.dylib|libpcre2-8.dylib)
+      libcrypto.3.dylib|libssl.3.dylib|liblua5.3.dylib|libpcre2-8.dylib|libwebp.dylib|libzstd.dylib|libbrotlidec.dylib)
         [ "$dep" = "@rpath/$base" ] || install_name_tool -change "$dep" "@rpath/$base" "$bin"
         ;;
       libduktape*)
@@ -54,6 +56,12 @@ fix_refs() {
         ;;
       libpcre2-8*)
         [ "$dep" = "@rpath/libpcre2-8.dylib" ] || install_name_tool -change "$dep" "@rpath/libpcre2-8.dylib" "$bin"
+        ;;
+      libsharpyuv*)
+        [ "$dep" = "@rpath/libsharpyuv.dylib" ] || install_name_tool -change "$dep" "@rpath/libsharpyuv.dylib" "$bin"
+        ;;
+      libbrotlicommon*)
+        [ "$dep" = "@rpath/libbrotlicommon.dylib" ] || install_name_tool -change "$dep" "@rpath/libbrotlicommon.dylib" "$bin"
         ;;
     esac
   done
