@@ -111,7 +111,7 @@ jobs:
                 -DPCRE2_SUPPORT_LIBREADLINE=OFF -DPCRE2_BUILD_TESTS=OFF \
                 -DBUILD_SHARED_LIBS=ON -DBUILD_STATIC_LIBS=OFF
           cmake --build build -j"$(sysctl -n hw.ncpu)"
-          cp -a build/libpcre2-8.0.dylib "$HOME/mojave-libs/libpcre2-8.dylib"
+          cp -aL build/libpcre2-8.0.dylib "$HOME/mojave-libs/libpcre2-8.dylib"
           ls -l "$HOME/mojave-libs/"
 
       - name: Package FMD2.app
