@@ -19,6 +19,13 @@ FW="$APP/Contents/Frameworks"
 rm -rf "$APP"
 cp -R "$SRC_APP" "$APP"
 
+# Lazarus leaves Contents/MacOS/fmd as a symlink to the binary sitting
+# beside the bundle; replace it with the real binary so the packaged app
+# is self-contained.
+rm -f "$EXE"
+cp "bin/x86_64-darwin/fmd" "$EXE"
+chmod +x "$EXE"
+
 PLIST="$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.heavysighs.fmd2" "$PLIST"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 2.0.34.5" "$PLIST"
