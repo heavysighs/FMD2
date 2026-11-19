@@ -80,9 +80,54 @@ jobs:
         run: |
           "$LAZBIN" --lazarusdir="$LAZARUSDIR" --build-mode=Darwin --widgetset=cocoa mangadownloader/md.lpi
 
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
+      - name: Build Mojave dylibs (OpenSSL, Duktape, PCRE2)
+        # The Homebrew bottles of these are built for macOS 15 and refuse
+        # to load on Mojave, so the copies bundled into the app are built
+        # from source with a 10.14 deployment target (Lua 5.3.6 above is
+        # already built the same way).
+        run: |
+          set -e
+          export MACOSX_DEPLOYMENT_TARGET=10.14
+          mkdir -p "$HOME/mojave-libs"
+          curl -fL -o /tmp/openssl.tar.gz https://www.openssl.org/source/openssl-3.0.18.tar.gz
+          tar -xzf /tmp/openssl.tar.gz -C /tmp
+          cd /tmp/openssl-3.0.18
+          ./Configure darwin64-x86_64-cc shared no-tests --prefix=/tmp/openssl-stage -mmacosx-version-min=10.14
+          make -j"$(sysctl -n hw.ncpu)" build_libs
+          cp -a libcrypto.3.dylib libssl.3.dylib "$HOME/mojave-libs/"
+          cd "$GITHUB_WORKSPACE"
+          curl -fL -o /tmp/duktape.tar.xz https://duktape.org/duktape-2.7.0.tar.xz
+          tar -xJf /tmp/duktape.tar.xz -C /tmp
+          cc -O2 -fPIC -mmacosx-version-min=10.14 -dynamiclib \
+             -Wl,-install_name,@rpath/libduktape.dylib \
+             -o "$HOME/mojave-libs/libduktape.dylib" /tmp/duktape-2.7.0/src/duktape.c -lm
+          curl -fL -o /tmp/pcre2.tar.gz https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.45/pcre2-10.45.tar.gz
+          tar -xzf /tmp/pcre2.tar.gz -C /tmp
+          cd /tmp/pcre2-10.45
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_OSX_DEPLOYMENT_TARGET=10.14 \
+                -DPCRE2_BUILD_PCRE2_8=ON -DPCRE2_BUILD_PCRE2_16=OFF -DPCRE2_BUILD_PCRE2_32=OFF \
+                -DPCRE2_SUPPORT_JIT=OFF -DPCRE2_SUPPORT_LIBZ=OFF -DPCRE2_SUPPORT_LIBBZ2=OFF \
+                -DPCRE2_SUPPORT_LIBREADLINE=OFF -DPCRE2_BUILD_TESTS=OFF \
+                -DBUILD_SHARED_LIBS=ON -DBUILD_STATIC_LIBS=OFF
+          cmake --build build -j"$(sysctl -n hw.ncpu)"
+          cp -a build/libpcre2-8.0.dylib "$HOME/mojave-libs/libpcre2-8.dylib"
+          ls -l "$HOME/mojave-libs/"
+
+      - name: Package FMD2.app
+        run: bash scripts/package-app.sh
+
+      - name: Mojave gate
+        run: |
+          python3 -m venv /tmp/gate-venv
+          /tmp/gate-venv/bin/pip install -q lief
+          /tmp/gate-venv/bin/python .github/scripts/check-mojave.py FMD2.app
+
+      - name: Upload app
+        run: ditto -c -k --sequesterRsrc --keepParent FMD2.app FMD2-mojave.zip
+
+      - uses: actions/upload-artifact@v4
         with:
-          name: fmd2-darwin-x86_64
-          path: bin/x86_64-darwin/
+          name: fmd2-mojave-app
+          path: FMD2-mojave.zip
           retention-days: 30
