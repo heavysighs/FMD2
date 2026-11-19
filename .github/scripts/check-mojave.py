@@ -50,6 +50,37 @@ def min_os_versions(binary):
     return results
 
 
+LOAD_TYPES = {
+    "LOAD_DYLIB",
+    "LOAD_WEAK_DYLIB",
+    "REEXPORT_DYLIB",
+    "LAZY_LOAD_DYLIB",
+    "LOAD_UPWARD_DYLIB",
+}
+
+
+def load_names(binary):
+    """Real library load commands only. LIEF also exposes the LC_ID_DYLIB
+    identity command and the LC_LOAD_DYLINKER command (/usr/lib/dyld) with
+    a name attribute; neither is a dependency."""
+    names = []
+    for cmd in binary.commands:
+        if cmd.__class__.__name__ != "DylibCommand":
+            continue
+        ctype = str(getattr(cmd, "command", "")).split(".")[-1]
+        if ctype in LOAD_TYPES:
+            names.append(cmd.name)
+    return names
+
+
+def rpath_list(binary):
+    out = []
+    for cmd in binary.commands:
+        if "path" in cmd.__class__.__name__.lower() and getattr(cmd, "path", None):
+            out.append(cmd.path)
+    return out
+
+
 def iter_binaries(path):
     try:
         parsed = lief.parse(path)
@@ -101,13 +132,8 @@ def main():
     # Dependency closure + absolute-path audit.
     for path, root, binary in binaries:
         rel = os.path.relpath(path, app)
-        rpaths = [
-            cmd.path for cmd in binary.commands if cmd.__class__.__name__ == "Rpath"
-        ]
-        for cmd in binary.commands:
-            dep = getattr(cmd, "name", None)
-            if not isinstance(dep, str):
-                continue
+        rpaths = rpath_list(binary)
+        for dep in load_names(binary):
             if dep.startswith("@loader_path/"):
                 target = os.path.normpath(
                     os.path.join(root, dep[len("@loader_path/"):])
