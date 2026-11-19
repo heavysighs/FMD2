@@ -40,6 +40,11 @@ cp "$LIBS/libcrypto.3.dylib" "$LIBS/libssl.3.dylib" "$LIBS/libduktape.dylib" \
    /usr/local/lib/liblua5.3.dylib "$FW/"
 
 cp -R lua languages images "$APP/Contents/MacOS/"
+cp changelog.txt readme.rtf license.txt "$APP/Contents/MacOS/"
+# bundled archiver: the app extracts its module database and packs
+# chapters with an external 7z; ResolveZipExe looks beside the exe first
+cp "$LIBS/7zz" "$APP/Contents/MacOS/7zz"
+chmod +x "$APP/Contents/MacOS/7zz"
 
 # Rewrite any load command that names one of the bundled libraries (by
 # whatever path the linker recorded) to its @rpath canonical name.

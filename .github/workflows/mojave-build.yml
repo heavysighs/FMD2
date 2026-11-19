@@ -144,6 +144,20 @@ jobs:
           cmake --build build -j"$(sysctl -n hw.ncpu)"
           cp -aL build/libwebp.dylib "$HOME/mojave-libs/libwebp.dylib"
           cp -aL build/libsharpyuv.dylib "$HOME/mojave-libs/libsharpyuv.dylib"
+          cd "$GITHUB_WORKSPACE"
+          # 7zz console archiver: FMD2 extracts its website-module database
+          # (.7z) and packs chapters with an external 7z, and a bare Mac has
+          # none. The official prebuilt Mac 7zz declares min macOS 12.0, so
+          # build it from source for 10.14 (same route Homebrew uses).
+          curl -fL -o /tmp/7z-src.tar.xz https://www.7-zip.org/a/7z2501-src.tar.xz
+          tar -xJf /tmp/7z-src.tar.xz -C /tmp
+          cd /tmp/CPP/7zip/Bundles/Alone2
+          make -j"$(sysctl -n hw.ncpu)" -f makefile.gcc \
+               CC="clang -mmacosx-version-min=10.14" \
+               CXX="clang++ -mmacosx-version-min=10.14"
+          ZZBIN=$(find . -name 7zz -type f | head -1)
+          echo "built 7zz: $ZZBIN"
+          cp "$ZZBIN" "$HOME/mojave-libs/7zz"
           ls -l "$HOME/mojave-libs/"
 
       - name: Package FMD2.app
@@ -154,6 +168,7 @@ jobs:
           python3 -m venv /tmp/gate-venv
           /tmp/gate-venv/bin/pip install -q lief
           /tmp/gate-venv/bin/python .github/scripts/check-mojave.py FMD2.app
+          /tmp/gate-venv/bin/python .github/scripts/check-runtime-names.py FMD2.app
 
       - name: Upload app
         run: ditto -c -k --sequesterRsrc --keepParent FMD2.app FMD2-mojave.zip

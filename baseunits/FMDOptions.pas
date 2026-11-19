@@ -301,8 +301,14 @@ begin
 end;
 
 // T020: resolve 7z/7zz from PATH (system tool, no bundled 7za.exe)
+// The packaged macOS app bundles its own 7zz next to the executable and
+// a bare Mac has no 7z on PATH, so look beside the executable first.
 function ResolveZipExe: String;
 begin
+  if FileExists(FMD_DIRECTORY + '7zz') then
+    Exit(FMD_DIRECTORY + '7zz');
+  if FileExists(FMD_DIRECTORY + '7z') then
+    Exit(FMD_DIRECTORY + '7z');
   Result := FindDefaultExecutablePath('7z');
   if Result = '' then
     Result := FindDefaultExecutablePath('7zz');
