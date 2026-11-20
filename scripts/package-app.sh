@@ -41,9 +41,13 @@ cp "$LIBS/libcrypto.3.dylib" "$LIBS/libssl.3.dylib" "$LIBS/libduktape.dylib" \
 
 cp -R lua languages images "$APP/Contents/MacOS/"
 cp changelog.txt readme.rtf license.txt "$APP/Contents/MacOS/"
+# config.json carries the module updater's GitHub coordinates; the app
+# materializes it into the config dir on first run (see FMDOptions).
+cp dist/config.json "$APP/Contents/MacOS/config.json"
 # bundled archiver: the app extracts its module database and packs
 # chapters with an external 7z; ResolveZipExe looks beside the exe first
 cp "$LIBS/7zz" "$APP/Contents/MacOS/7zz"
+cp "$LIBS/cacert.pem" "$APP/Contents/MacOS/cacert.pem"
 chmod +x "$APP/Contents/MacOS/7zz"
 
 # Rewrite any load command that names one of the bundled libraries (by

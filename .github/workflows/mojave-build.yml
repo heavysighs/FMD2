@@ -162,6 +162,9 @@ jobs:
           ZZBIN=$(find . -name 7zz -type f | head -1)
           echo "built 7zz: $ZZBIN"
           cp "$ZZBIN" "$HOME/mojave-libs/7zz"
+          # CA bundle for TLS verification on macOS: a from-source OpenSSL
+          # has no usable default CA paths there (see httpsendthread.pas)
+          curl -fL -o "$HOME/mojave-libs/cacert.pem" https://curl.se/ca/cacert.pem
           ls -l "$HOME/mojave-libs/"
 
       - name: Package FMD2.app

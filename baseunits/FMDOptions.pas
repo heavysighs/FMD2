@@ -370,6 +370,14 @@ begin
   // program files (images, changelog) stay in FMD_DIRECTORY
   CONFIG_FILE := XDGConfigRoot + 'config.json';
 
+  // The module updater reads its GitHub coordinates (owner/repo/path)
+  // from CONFIG_FILE itself; the file ships beside the executable
+  // (dist/config.json) but on UNIX nothing installed it into the config
+  // dir, so the updater ran with empty coordinates and every startup
+  // check failed. Materialize it on first run, like settings.json.
+  if (not FileExists(CONFIG_FILE)) and FileExists(FMD_DIRECTORY + 'config.json') then
+    CopyFile(FMD_DIRECTORY + 'config.json', CONFIG_FILE);
+
   IMAGE_FOLDER := FMD_DIRECTORY + 'images' + PathDelim;
   CHANGELOG_FILE := FMD_DIRECTORY + 'changelog.txt';
   README_FILE := FMD_DIRECTORY + 'readme.rtf';
@@ -395,6 +403,36 @@ begin
 
   ReadConfigFile;
 end;
+
+{$IFDEF UNIX}
+// The lua tree is copied to the data dir on first run only, so modules
+// bundled with a newer app build would never reach existing installs.
+// Merge pass: copy bundled files the data dir lacks; never overwrite —
+// files already there belong to the module updater / the user.
+procedure MergeBundledLuaFiles(const ABundleDir, ADataDir: String);
+var
+  fl: TStringList;
+  i: Integer;
+  rel, dst: String;
+begin
+  fl := TStringList.Create;
+  try
+    FindAllFiles(fl, ExcludeTrailingPathDelimiter(ABundleDir), '*', True);
+    for i := 0 to fl.Count - 1 do
+    begin
+      rel := CreateRelativePath(fl[i], ABundleDir);
+      dst := ADataDir + rel;
+      if not FileExistsUTF8(dst) then
+      begin
+        ForceDirectoriesUTF8(ExtractFilePath(dst));
+        CopyFile(fl[i], dst);
+      end;
+    end;
+  finally
+    fl.Free;
+  end;
+end;
+{$ENDIF}
 
 procedure SetAppDataDirectory(const ADir: String);
 begin
@@ -435,6 +473,8 @@ begin
     if not DirectoryExistsUTF8(LUA_REPO_FOLDER) then
       ForceDirectoriesUTF8(LUA_REPO_FOLDER);
   end;
+  if DirectoryExistsUTF8(FMD_DIRECTORY + 'lua') then
+    MergeBundledLuaFiles(FMD_DIRECTORY + 'lua' + PathDelim, LUA_REPO_FOLDER);
 {$ELSE}
   LUA_REPO_FOLDER := FMD_DIRECTORY + 'lua' + PathDelim;
 {$ENDIF}

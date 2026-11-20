@@ -421,6 +421,12 @@ var
   s: TStringList;
   i: Integer;
 begin
+  // Rebuilding every module's option controls grows a long anchor chain;
+  // on Cocoa each intermediate layout pass floods the form with WMSize
+  // messages and trips the LCL "WMSize loop detected" exception. Defer
+  // all alignment until the rebuild is complete.
+  DisableAlign;
+  try
   dparent.DestroyComponents;
   // sort the modules by name for the ui
   s := TStringList.Create;
@@ -452,6 +458,9 @@ begin
     end;
   finally
     s.Free;
+  end;
+  finally
+    EnableAlign;
   end;
 end;
 

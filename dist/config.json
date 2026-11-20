@@ -8,9 +8,9 @@
   "GitHub" : {
     "api_url" : "https://api.github.com/",
     "download_url" : "https://raw.githubusercontent.com/",
-    "owner" : "dazedcat19",
+    "owner" : "heavysighs",
     "name" : "FMD2",
-    "ref" : "master",
+    "ref" : "mojave-fix",
     "path" : "lua"
   }
 }

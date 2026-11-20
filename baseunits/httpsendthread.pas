@@ -187,6 +187,9 @@ var
 
 implementation
 
+uses
+  FMDOptions;
+
 var
   ALLHTTPSendThread: TFPList;
   CS_ALLHTTPSendThread: TRTLCriticalSection;
@@ -534,6 +537,18 @@ begin
   // FR-010: TLS certificate verification stays enabled (never disable).
   // CA store comes from OpenSSL default paths (SSL_CTX_set_default_verify_paths).
   Sock.SSL.VerifyCert := True;
+{$IFDEF DARWIN}
+  // On macOS those default paths are empty: a from-source OpenSSL looks
+  // inside its own build prefix and never reads the system trust store,
+  // so every HTTPS request failed verification ("Failed to connect to
+  // GitHub API", downloads stuck at result code 500). Point verification
+  // at a real CA bundle: the copy bundled with the app first, then the
+  // bundle Apple maintains at /etc/ssl/cert.pem.
+  if FileExists(FMD_DIRECTORY + 'cacert.pem') then
+    Sock.SSL.CertCAFile := FMD_DIRECTORY + 'cacert.pem'
+  else if FileExists('/etc/ssl/cert.pem') then
+    Sock.SSL.CertCAFile := '/etc/ssl/cert.pem';
+{$ENDIF}
   Reset;
   if Assigned(AOwner) then
   begin
