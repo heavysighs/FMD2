@@ -45,9 +45,13 @@ jobs:
           # keeps the files for future runs.
           fetch_chunk() {
             # $1 url, $2 part file, $3 start, $4 end
+            # NOTE: curl -C (resume) is mutually exclusive with -r (range),
+            # so a failed chunk restarts from scratch — chunks are ~33 MB,
+            # cheap to redo.
             for i in 1 2 3 4 5 6 7 8 9 10; do
-              if curl -fsSL -C - -r "$3-$4" -o "$2" "$1"; then return 0; fi
+              if curl -fsSL -r "$3-$4" -o "$2" "$1"; then return 0; fi
               echo "chunk $2 attempt $i failed"
+              rm -f "$2"
               sleep 3
             done
             echo "chunk failed: $2"; return 1
