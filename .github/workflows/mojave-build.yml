@@ -23,6 +23,14 @@ jobs:
         with:
           ref: mojave-fix
 
+      - name: Cache FPC + Lazarus downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            /tmp/fpc.dmg
+            /tmp/lazarus.zip
+          key: toolchain-lazarus46-v1
+
       - name: Install FPC + Lazarus 4.6 (official SourceForge packages)
         # md.lpi requires LCL >= 3.8, so Homebrew's stale 3.6 cask and the
         # (now deleted) gcarq/setup-lazarus action are both out. Lazarus 4.6
@@ -30,18 +38,40 @@ jobs:
         run: |
           set -e
           BASE='https://sourceforge.net/projects/lazarus/files/Lazarus%20macOS%20x86-64/Lazarus%204.6'
-          # SourceForge mirrors can crawl or drop mid-file (run #19 died
-          # after an hour at ~60 KB/s): resume partial downloads, abort
-          # stalls so retries kick in, wipe the partial every 3rd failure
-          # in case a mirror cannot resume.
-          dl() {
-            for i in 1 2 3 4 5 6 7 8; do
-              if curl -fL -C - --speed-limit 20480 --speed-time 60 -o "$2" "$1"; then return 0; fi
-              echo "download attempt $i failed for $1"
-              if [ $((i % 3)) -eq 0 ]; then rm -f "$2"; fi
-              sleep 5
+          # SourceForge's single-stream downloads to these runners crawl
+          # at ~10-60 KB/s and drop mid-file (runs #19 and #20 both died
+          # there, #20 after 2.5 hours). Fetch each file as 8 parallel
+          # ranged chunks with per-chunk resume; the cache above then
+          # keeps the files for future runs.
+          fetch_chunk() {
+            # $1 url, $2 part file, $3 start, $4 end
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+              if curl -fsSL -C - -r "$3-$4" -o "$2" "$1"; then return 0; fi
+              echo "chunk $2 attempt $i failed"
+              sleep 3
             done
-            echo "download failed: $1"; return 1
+            echo "chunk failed: $2"; return 1
+          }
+          dl() {
+            # $1 url, $2 output file
+            if [ -s "$2" ]; then echo "cached: $2"; return 0; fi
+            local len
+            len=$(curl -sIL "$1" | grep -i '^content-length:' | tail -1 | tr -dc '0-9')
+            if [ -z "$len" ]; then echo "no content-length for $1"; return 1; fi
+            echo "downloading $2 ($len bytes) in 8 chunks"
+            local n=8 size=$(( (len + 7) / 8 )) i start end
+            for i in $(seq 0 $((n - 1))); do
+              start=$((i * size)); end=$((start + size - 1))
+              if [ $end -ge $len ]; then end=$((len - 1)); fi
+              fetch_chunk "$1" "$2.part$i" "$start" "$end" &
+            done
+            wait
+            : > "$2"
+            for i in $(seq 0 $((n - 1))); do cat "$2.part$i" >> "$2"; rm -f "$2.part$i"; done
+            local got
+            got=$(stat -f %z "$2")
+            if [ "$got" != "$len" ]; then echo "size mismatch: $got != $len"; rm -f "$2"; return 1; fi
+            echo "downloaded $2 OK"
           }
           dl "$BASE/fpc-3.2.4rc1a.intelarm64-macosx.dmg/download" /tmp/fpc.dmg
           dl "$BASE/lazarus-darwin-x86_64-4.6.zip/download" /tmp/lazarus.zip
