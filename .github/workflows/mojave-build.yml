@@ -93,7 +93,17 @@ jobs:
       - name: Install native libraries
         # No lua here: the app binds Lua 5.3 (lua53.pas), Homebrew only
         # carries 5.4 now, so 5.3.6 is built from source in the next step.
-        run: brew install openssl@3 sqlite webp brotli zstd pcre2 duktape sevenzip
+        # Retry loop: run #22 died here with "A brew install is already
+        # running" (a stale lock on the fresh runner).
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          for i in 1 2 3 4; do
+            if brew install openssl@3 sqlite webp brotli zstd pcre2 duktape sevenzip; then exit 0; fi
+            echo "brew install attempt $i failed; retrying"
+            sleep 15
+          done
+          exit 1
 
       - name: Build Lua 5.3.6 dylib (targeting 10.14)
         run: |
