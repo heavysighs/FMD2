@@ -30,8 +30,21 @@ jobs:
         run: |
           set -e
           BASE='https://sourceforge.net/projects/lazarus/files/Lazarus%20macOS%20x86-64/Lazarus%204.6'
-          curl -fL -o /tmp/fpc.dmg "$BASE/fpc-3.2.4rc1a.intelarm64-macosx.dmg/download"
-          curl -fL -o /tmp/lazarus.zip "$BASE/lazarus-darwin-x86_64-4.6.zip/download"
+          # SourceForge mirrors can crawl or drop mid-file (run #19 died
+          # after an hour at ~60 KB/s): resume partial downloads, abort
+          # stalls so retries kick in, wipe the partial every 3rd failure
+          # in case a mirror cannot resume.
+          dl() {
+            for i in 1 2 3 4 5 6 7 8; do
+              if curl -fL -C - --speed-limit 20480 --speed-time 60 -o "$2" "$1"; then return 0; fi
+              echo "download attempt $i failed for $1"
+              if [ $((i % 3)) -eq 0 ]; then rm -f "$2"; fi
+              sleep 5
+            done
+            echo "download failed: $1"; return 1
+          }
+          dl "$BASE/fpc-3.2.4rc1a.intelarm64-macosx.dmg/download" /tmp/fpc.dmg
+          dl "$BASE/lazarus-darwin-x86_64-4.6.zip/download" /tmp/lazarus.zip
           mnt=$(mktemp -d)
           hdiutil attach /tmp/fpc.dmg -mountpoint "$mnt" -nobrowse
           pkg=$(find "$mnt" -name '*.pkg' -o -name '*.mpkg' | head -1)
