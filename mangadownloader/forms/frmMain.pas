@@ -6210,6 +6210,15 @@ begin
     // misc
     frmCustomColor.LoadFromIniFile(settingsfile);
     ckEnableLogging.Checked := ReadBool('logger', 'Enabled', False);
+    {$IFDEF DARWIN}
+    // Field-testing the macOS port: module load failures and Lua errors
+    // go to the file logger and are silently discarded while it is off
+    // (that is how a run with ~2/3 of the website modules missing left
+    // no trace in fmd.log). Keep the logger on so the next test run
+    // captures them. It can still be turned off in Options for the
+    // session; it is forced back on at the next launch.
+    ckEnableLogging.Checked := True;
+    {$ENDIF}
     frmLuaModulesUpdater.LuaModulesUpdaterForm.ckEnableModuleDebug.Checked :=
       ReadBool('Modules', 'Debug', False);
     edLogFileName.Text := ReadString('logger', 'LogFileName', '');
