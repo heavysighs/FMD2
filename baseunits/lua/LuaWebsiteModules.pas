@@ -538,6 +538,9 @@ begin
     end
   end;
 
+  if TempModules.Count = 0 then
+    SendLog('Lua module file registered no module: ' + ExtractFileName(AFileName));
+
   if TempModules.Count <> 0 then
     begin
       c := TLuaWebsiteModulesContainer.Create;
@@ -597,20 +600,39 @@ end;
 
 procedure TLuaWebsiteModulesLoaderThread.Execute;
 var
-  f:String;
+  f: String;
+  i: Integer;
 begin
-  TempModules:=TLuaWebsiteModules.Create;
+  TempModules := TLuaWebsiteModules.Create;
   try
-    f:=FOwner.GetFileName;
-    while f<>'' do begin
-      LoadLuaWebsiteModule(f);
-      f:=FOwner.GetFileName;
+    f := FOwner.GetFileName;
+    while f <> '' do
+    begin
+      // One bad file must never kill the loader thread. The old
+      // loop-wide handler ended the thread on the first escaping
+      // exception; once every loader thread had died that way, all
+      // files still queued were silently never loaded (seen on macOS:
+      // only ~300 of ~680 modules registered, same set every launch).
+      try
+        LoadLuaWebsiteModule(f);
+      except
+        on E: Exception do
+        begin
+          SendLogException(ClassName + '.Execute.Error> "' + f + '"', E);
+          // drop any half-registered modules left over from this file
+          for i := TempModules.Count - 1 downto 0 do
+          begin
+            TempModules[i].Module.Free;
+            TempModules[i].Free;
+            TempModules.Delete(i);
+          end;
+        end;
+      end;
+      f := FOwner.GetFileName;
     end;
-  except
-    on E: Exception do
-      SendLogException(ClassName+'.Execute.Error>', E);
+  finally
+    TempModules.Free;
   end;
-  TempModules.Free;
 end;
 
 constructor TLuaWebsiteModulesLoaderThread.Create(
@@ -632,11 +654,15 @@ end;
 
 function TLuaWebsiteModulesLoader.GetFileName: String;
 begin
-  if FFileListIndex>FFileList.Count-1 then Exit('');
+  Result := '';
   FFileListGuardian.Enter;
-  Result:=FFileList[FFileListIndex];
-  Inc(FFileListIndex);
-  FFileListGuardian.Leave;
+  try
+    if FFileListIndex > FFileList.Count - 1 then Exit;
+    Result := FFileList[FFileListIndex];
+    Inc(FFileListIndex);
+  finally
+    FFileListGuardian.Leave;
+  end;
 end;
 
 procedure TLuaWebsiteModulesLoader.ScanAndLoadFiles;
@@ -659,6 +685,8 @@ begin
 
   LuaPackage.ClearCache;
   Modules.Sort;
+  SendLog('Lua module scan: ' + IntToStr(FFileList.Count) + ' files, ' +
+    IntToStr(Modules.Count) + ' modules registered');
 end;
 
 constructor TLuaWebsiteModulesLoader.Create;
