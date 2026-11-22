@@ -5911,10 +5911,14 @@ begin
   imCover.Picture.Assign(nil);
 
   rmInformation.Clear;
+  // Add the Loading line BEFORE touching text attributes: reading the
+  // attributes of an empty memo is not safe on every widgetset (the
+  // Cocoa richmemo raised an uncaught NSRangeException there and
+  // aborted the app on every title view).
+  rmInformation.Lines.Add(RS_Loading);
   rmInformation.GetTextAttributes(0, fp);
   fp.Color := ColorToRGB(clWindowText);
   rmInformation.SetTextAttributes(0, -1, fp);
-  rmInformation.Lines.Add(RS_Loading);
 
   clbChapterList.Clear;
   if Assigned(gifWaiting) then

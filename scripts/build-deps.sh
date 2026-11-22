@@ -138,6 +138,31 @@ EOF
   echo "patch internettools.lpk: +RequiredPkgs laz_synapse"
 fi
 
+# UP4: richmemo cocoa GetDict clamps textOffset to length-1 when it is
+#       >= length; on an EMPTY memo that computes attributesAtIndex(-1),
+#       which raises an uncaught NSRangeException and aborts the app.
+#       FMD hits this on every title view: ViewMangaInfo reads the info
+#       memo's attributes right after Clear, and ShowInformation clears
+#       again before AddTextToInfo reads them. Return nil for empty text
+#       instead — every caller treats a nil dict as "default params",
+#       which is the insertion-point behaviour the code expects.
+rm_cocoa="$THIRD/richmemo/cocoa/cocoarichmemo.pas"
+if ! grep -q 'length=0 then Exit(nil)' "$rm_cocoa"; then
+  python3 - "$rm_cocoa" <<'EOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = """  if textOffset>=txt.string_.length then
+    textOffset:=txt.string_.length-1;"""
+new = """  if txt.string_.length=0 then Exit(nil);
+  if textOffset>=txt.string_.length then
+    textOffset:=txt.string_.length-1;"""
+assert old in s, "richmemo GetDict block not found - upstream layout changed"
+open(p, 'w').write(s.replace(old, new, 1))
+EOF
+  echo "patch richmemo cocoa GetDict: empty text returns nil dict (no NSRangeException)"
+fi
+
 # sed -i above uses the portable -i.fmd2bak form (BSD sed on macOS requires
 # a suffix argument); drop the backup files it leaves behind.
 find "$THIRD" -name '*.fmd2bak' -delete 2>/dev/null || true
