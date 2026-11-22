@@ -407,6 +407,19 @@ begin
   if Assigned(FLastException) then
     if (IgnoredExceptionList.IndexOf(FLastException.ClassName) > -1) then
       Exit;
+  {$IFDEF DARWIN}
+  // The custom dialog fills a TMemo with the report before showing it.
+  // On Cocoa that can raise an uncaught NSRangeException inside AppKit
+  // (NSConcreteTextStorage setAttributes:range:) and abort the process,
+  // turning a recoverable error into a crash (seen on macOS 10.14 with
+  // the ELayoutException "WMSize loop" report). The full report has
+  // already been written to the log by CreateExceptionReport, so on
+  // macOS show only the message in a plain system alert.
+  if Assigned(FLastException) then
+    Application.MessageBox(PChar(FLastException.Message),
+      PChar(Application.Title), 0);
+  Exit;
+  {$ENDIF}
   with TSimpleExceptionForm.Create(nil) do try
       MemoExceptionLog.Lines.Text := FLastReport;
       if Assigned(FLastException) then

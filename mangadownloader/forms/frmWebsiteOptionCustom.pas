@@ -80,6 +80,7 @@ type
     function AddComboBox(const ABindValue: PInteger;
       AName, ACaption, AGroup, AGroupCaption, AItems: String): TWinControl;
     procedure CreateWebsiteOption;
+    procedure UpdateContentHeight;
   end;
 
 var
@@ -413,6 +414,23 @@ begin
     end;
 end;
 
+procedure TCustomOptionForm.UpdateContentHeight;
+var
+  i, contentBottom: Integer;
+  ctl: TControl;
+begin
+  contentBottom := 0;
+  for i := 0 to ControlCount - 1 do
+  begin
+    ctl := Controls[i];
+    if ctl.Top + ctl.Height > contentBottom then
+      contentBottom := ctl.Top + ctl.Height;
+  end;
+  if contentBottom <= 0 then Exit;
+  Align := alTop;
+  Height := contentBottom + ScaleFontTo96(tbspace);
+end;
+
 procedure TCustomOptionForm.CreateWebsiteOption;
 var
   m: TModuleContainer;
@@ -462,6 +480,16 @@ begin
   finally
     EnableAlign;
   end;
+  // The form is embedded in a scroll box with Align = alClient, so its
+  // height is negotiated with the parent on every layout pass. With the
+  // full option list built (~3000 px of stacked controls) that
+  // negotiation never settles on Cocoa: the LCL raises ELayoutException
+  // "WMSize loop detected" (BoundsRealized b=2969, seen on macOS 10.14),
+  // and the DisableAlign wrap above only covers the build itself, not
+  // the resize passes when the page is shown. Pin the form to its
+  // realized content height with Align = alTop instead: the scroll box
+  // scrolls, and later parent resizes only change the width.
+  UpdateContentHeight;
 end;
 
 end.
