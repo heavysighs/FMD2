@@ -163,6 +163,48 @@ EOF
   echo "patch richmemo cocoa GetDict: empty text returns nil dict (no NSRangeException)"
 fi
 
+# UP5: richmemo cocoa range helpers (TextRange/ParaRange/SetParaAlignment)
+#       clamp an over-long range but pass a negative TextLen straight
+#       through as the NSRange length. The LCL convention TextLen=-1
+#       means "to the end of the text"; FMD relies on it
+#       (ViewMangaInfo calls SetTextAttributes(0, -1, ...) on every
+#       title view), and on Cocoa it produced an out-of-bounds range
+#       and an uncaught NSRangeException in addAttribute. Treat
+#       TextLen<0 as "to the end" and clamp a start offset past the
+#       end, the same way the other widgetsets behave.
+rm_cocoa="$THIRD/richmemo/cocoa/cocoarichmemo.pas"
+if ! grep -q '(TextLen<0) or (textOffset+TextLen' "$rm_cocoa"; then
+  python3 - "$rm_cocoa" <<'EOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+subs = [
+  # ParaRange (NSString overload; anchored on the location line so the
+  # 2-space pattern cannot match inside TextRange's 3-space line)
+  ("  Result.location:=textOffset;\n  if textOffset+TextLen>txt.length then",
+   "  Result.location:=textOffset;\n"
+   "  if textOffset>txt.length then begin textOffset:=txt.length; Result.location:=textOffset; end;\n"
+   "  if (TextLen<0) or (textOffset+TextLen>txt.length) then"),
+  # TextRange (NSTextStorage overload, 3-space indent in upstream)
+  ("  Result.location:=textOffset;\n   if textOffset+TextLen>txt.length then",
+   "  Result.location:=textOffset;\n"
+   "   if textOffset>txt.length then begin textOffset:=txt.length; Result.location:=textOffset; end;\n"
+   "   if (TextLen<0) or (textOffset+TextLen>txt.length) then"),
+  # SetParaAlignment inline clamp
+  ("  rng.length:=TextLen;",
+   "  if TextStart>txt.textStorage.string_.length then begin TextStart:=txt.textStorage.string_.length; rng.location:=TextStart; end;\n"
+   "  rng.length:=TextLen;"),
+  ("  if TextStart+TextLen>txt.textStorage.string_.length then",
+   "  if (TextLen<0) or (TextStart+TextLen>txt.textStorage.string_.length) then"),
+]
+for old, new in subs:
+    assert s.count(old) == 1, "richmemo range-clamp block not found or not unique: %r" % old
+    s = s.replace(old, new, 1)
+open(p, 'w').write(s)
+EOF
+  echo "patch richmemo cocoa ranges: TextLen<0 means to-end, clamp start offset (no NSRangeException)"
+fi
+
 # sed -i above uses the portable -i.fmd2bak form (BSD sed on macOS requires
 # a suffix argument); drop the backup files it leaves behind.
 find "$THIRD" -name '*.fmd2bak' -delete 2>/dev/null || true
