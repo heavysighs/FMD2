@@ -129,46 +129,13 @@ jobs:
           echo "$(dirname "$LAZBIN")" >> "$GITHUB_PATH"
 
       - name: Patch LCL Cocoa context destroy (Mojave GState abort)
-        # TCocoaContext.Destroy restores the CGContext GState once for
-        # FClipped and once for FFlipped, but ClearClipping also restores
-        # the clip save WITHOUT clearing FClipped, so the count can run
-        # ahead of the actual saves. On macOS 10.14 an extra
-        # CGContextRestoreGState on an empty stack aborts the process
-        # (CGGStackRestore assertion) — this killed the app the moment
-        # the Downloads page's transfer-rate chart freed a bitmap canvas
-        # (TAChart SetTransparency -> TBitmap.SetSize -> DeleteDC).
-        # A bitmap context owns its CGContext (created per SetBitmap,
-        # released right after the restores; SetBitmap itself abandons
-        # the replaced context's stack the same way), so skip the
-        # restores for bitmap contexts. Window contexts are untouched.
-        run: |
-          gdiobj="$LAZARUSDIR/lcl/interfaces/cocoa/cocoagdiobjects.pas"
-          if ! grep -q 'bitmap context owns its CGContext' "$gdiobj"; then
-          python3 - "$gdiobj" <<'PYEOF'
-          import sys
-          lines = open(sys.argv[1]).read().split('\n')
-          di = next(i for i, l in enumerate(lines) if l.startswith('destructor TCocoaContext.Destroy;'))
-          i0 = next(i for i in range(di, di + 40) if lines[i].strip() == 'if Assigned(ctx) then begin')
-          i1 = next(i for i in range(i0, i0 + 12) if lines[i].strip() == 'ctx.release;')
-          seg = lines[i0:i1]
-          assert sum('CGContextRestoreGState' in l for l in seg) == 2, 'expected 2 restores in Destroy'
-          assert any('if Clipped then' in l for l in seg) and any('if Flipped then' in l for l in seg)
-          b = lines[i0][:len(lines[i0]) - len(lines[i0].lstrip())]
-          rep = [b + 'if Assigned(ctx) then begin',
-                 b + '  // A bitmap context owns its CGContext: its GState stack is',
-                 b + '  // disposable, and the restores below can over-run it after',
-                 b + '  // ClearClipping (macOS 10.14 aborts in CGGStackRestore).',
-                 b + '  if not (Self is TCocoaBitmapContext) then begin',
-                 b + '    if Clipped then',
-                 b + '      CGContextRestoreGState(CGContext());',
-                 b + '    if Flipped then',
-                 b + '      CGContextRestoreGState(CGContext());',
-                 b + '  end;']
-          lines[i0:i1] = rep
-          open(sys.argv[1], 'w').write('\n'.join(lines))
-          PYEOF
-            echo "patch lcl cocoa context destroy: skip GState restores for bitmap contexts (no CGGStackRestore abort on 10.14)"
-          fi
+        # The patch and its full explanation live in scripts/patch-lcl.py:
+        # TCocoaContext.Destroy can restore the CGContext graphics state
+        # more times than it was saved (ClearClipping restores without
+        # clearing FClipped); macOS 10.14 aborts on the extra restore
+        # (CGGStackRestore) where newer macOS ignores it. Bitmap contexts
+        # skip the restores. See MOJAVE.md.
+        run: python3 scripts/patch-lcl.py "$LAZARUSDIR/lcl/interfaces/cocoa/cocoagdiobjects.pas"
 
       - name: Fetch and build Lazarus packages (Cocoa)
         env:

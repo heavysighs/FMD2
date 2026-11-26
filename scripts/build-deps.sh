@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # build-deps.sh — fetch pinned third-party Lazarus packages into 3rd/, register
-# them with lazbuild, apply Linux patches, and compile them (tasks T006/T016).
+# them with lazbuild, apply the patches in scripts/patch-deps.py, and compile them.
 # Every URL below was verified reachable (git ls-remote / GitHub API) before pinning.
 set -euo pipefail
 
@@ -98,199 +98,17 @@ mkdir -p "$GEN"
 } > "$GEN/laz_synapse.lpk"
 echo "gen   $GEN/laz_synapse.lpk ($(grep -c '<Item' <<<"$(grep -A200 '<Files' "$GEN/laz_synapse.lpk")" || true) entries)"
 
-# --- Linux patches for pinned upstream packages (idempotent) -----------------
-# UP1: virtualtreeview_package: units/$(LCLWidgetType) has no dir for qt6
-#      (repo ships units/qt, units/gtk2 …) → FakeActiveX not found on qt6.
-vt_lpk="$THIRD/virtualtreeview/virtualtreeview_package.lpk"
-if grep -q 'Value="units/\$(LCLWidgetType)"' "$vt_lpk"; then
-  sed -i.fmd2bak 's|Value="units/\$(LCLWidgetType)"|Value="units/$(LCLWidgetType);units/qt;units/gtk2"|' "$vt_lpk"
-  echo "patch virtualtreeview_package.lpk: add units/qt,units/gtk2 fallback"
-fi
-# UP1b: include/intf/$(LCLWidgetType) has no qt6 dir either (vtgraphicsi.inc …)
-if grep -q 'Value="include/intf/\$(LCLWidgetType);units;include/intf"' "$vt_lpk"; then
-  sed -i.fmd2bak 's|Value="include/intf/\$(LCLWidgetType);units;include/intf"|Value="include/intf/$(LCLWidgetType);units;include/intf;include/intf/qt;include/intf/gtk2"|' "$vt_lpk"
-  echo "patch virtualtreeview_package.lpk: add include/intf/qt,gtk2 fallback"
-fi
-# UP1c: include/intf/qt/vtgraphicsi.inc hard-references unit `qt4` (dead since
-#       Lazarus 2.x; only the `uses` line mentions it) → retarget to qt6.
-if grep -q 'qt4, qtobjects' "$THIRD/virtualtreeview/include/intf/qt/vtgraphicsi.inc"; then
-  sed -i.fmd2bak 's|qt4, qtobjects|qt6, qtobjects|' "$THIRD/virtualtreeview/include/intf/qt/vtgraphicsi.inc"
-  echo "patch virtualtreeview include/intf/qt/vtgraphicsi.inc: qt4 -> qt6"
-fi
-# UP3: VirtualTrees.pas — unqualified 3-arg Move() resolves to a 2-arg Classes
-#      Move in this FPC/scope; qualify as System.Move (3 call sites).
-if grep -q '[^m.]Move(FPositionToIndex\[' "$THIRD/virtualtreeview/VirtualTrees.pas"; then
-  sed -i.fmd2bak 's|\([^m.]\)Move(FPositionToIndex\[|\1System.Move(FPositionToIndex[|g' "$THIRD/virtualtreeview/VirtualTrees.pas"
-  echo "patch VirtualTrees.pas: Move(FPositionToIndex -> System.Move (3 sites)"
-fi
-# UP2: internettools.lpk: synapse (httpsend) not declared as dependency.
-it_lpk="$THIRD/internettools/internettools.lpk"
-if ! grep -q '<PackageName Value="laz_synapse"/>' "$it_lpk"; then
-  python3 - "$it_lpk" <<'EOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-old = '<RequiredPkgs Count="1">\n      <Item1>\n        <PackageName Value="FCL"/>\n      </Item1>\n    </RequiredPkgs>'
-new = '<RequiredPkgs Count="2">\n      <Item1>\n        <PackageName Value="FCL"/>\n      </Item1>\n      <Item2>\n        <PackageName Value="laz_synapse"/>\n      </Item2>\n    </RequiredPkgs>'
-assert old in s, "internettools RequiredPkgs block not found — upstream layout changed"
-open(p, 'w').write(s.replace(old, new, 1))
-EOF
-  echo "patch internettools.lpk: +RequiredPkgs laz_synapse"
-fi
-
-# UP4: richmemo cocoa GetDict clamps textOffset to length-1 when it is
-#       >= length; on an EMPTY memo that computes attributesAtIndex(-1),
-#       which raises an uncaught NSRangeException and aborts the app.
-#       FMD hits this on every title view: ViewMangaInfo reads the info
-#       memo's attributes right after Clear, and ShowInformation clears
-#       again before AddTextToInfo reads them. Return nil for empty text
-#       instead — every caller treats a nil dict as "default params",
-#       which is the insertion-point behaviour the code expects.
-rm_cocoa="$THIRD/richmemo/cocoa/cocoarichmemo.pas"
-if ! grep -q 'length=0 then Exit(nil)' "$rm_cocoa"; then
-  python3 - "$rm_cocoa" <<'EOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-old = """  if textOffset>=txt.string_.length then
-    textOffset:=txt.string_.length-1;"""
-new = """  if txt.string_.length=0 then Exit(nil);
-  if textOffset>=txt.string_.length then
-    textOffset:=txt.string_.length-1;"""
-assert old in s, "richmemo GetDict block not found - upstream layout changed"
-open(p, 'w').write(s.replace(old, new, 1))
-EOF
-  echo "patch richmemo cocoa GetDict: empty text returns nil dict (no NSRangeException)"
-fi
-
-# UP5: richmemo cocoa range helpers (TextRange/ParaRange/SetParaAlignment)
-#       clamp an over-long range but pass a negative TextLen straight
-#       through as the NSRange length. The LCL convention TextLen=-1
-#       means "to the end of the text"; FMD relies on it
-#       (ViewMangaInfo calls SetTextAttributes(0, -1, ...) on every
-#       title view), and on Cocoa it produced an out-of-bounds range
-#       and an uncaught NSRangeException in addAttribute. Treat
-#       TextLen<0 as "to the end" and clamp a start offset past the
-#       end, the same way the other widgetsets behave.
-rm_cocoa="$THIRD/richmemo/cocoa/cocoarichmemo.pas"
-if ! grep -q '(TextLen<0) or (textOffset+TextLen' "$rm_cocoa"; then
-  python3 - "$rm_cocoa" <<'EOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-subs = [
-  # ParaRange (NSString overload; anchored on the location line so the
-  # 2-space pattern cannot match inside TextRange's 3-space line)
-  ("  Result.location:=textOffset;\n  if textOffset+TextLen>txt.length then",
-   "  Result.location:=textOffset;\n"
-   "  if textOffset>txt.length then begin textOffset:=txt.length; Result.location:=textOffset; end;\n"
-   "  if (TextLen<0) or (textOffset+TextLen>txt.length) then"),
-  # TextRange (NSTextStorage overload, 3-space indent in upstream)
-  ("  Result.location:=textOffset;\n   if textOffset+TextLen>txt.length then",
-   "  Result.location:=textOffset;\n"
-   "   if textOffset>txt.length then begin textOffset:=txt.length; Result.location:=textOffset; end;\n"
-   "   if (TextLen<0) or (textOffset+TextLen>txt.length) then"),
-  # SetParaAlignment inline clamp
-  ("  rng.length:=TextLen;",
-   "  if TextStart>txt.textStorage.string_.length then begin TextStart:=txt.textStorage.string_.length; rng.location:=TextStart; end;\n"
-   "  rng.length:=TextLen;"),
-  ("  if TextStart+TextLen>txt.textStorage.string_.length then",
-   "  if (TextLen<0) or (TextStart+TextLen>txt.textStorage.string_.length) then"),
-]
-for old, new in subs:
-    assert s.count(old) == 1, "richmemo range-clamp block not found or not unique: %r" % old
-    s = s.replace(old, new, 1)
-open(p, 'w').write(s)
-EOF
-  echo "patch richmemo cocoa ranges: TextLen<0 means to-end, clamp start offset (no NSRangeException)"
-fi
-
-# UP6: richmemo cocoa FindFont (used by SetTextAttributes) has a retry
-#       loop whose counter is never incremented: when CoreText cannot
-#       match the requested family+traits, matchingFontDescriptor is
-#       called forever and the UI hangs displaying the info panel (an
-#       Activity Monitor sample on the user's iMac showed the main
-#       thread inside FindFont for ~100% of samples while the info
-#       thread waited in Synchronize — the fetch itself had finished).
-#       Rewrite: increment the counter, fall back to the system font
-#       instead of returning nil, and cache the last match — an info
-#       panel restyles the same family+traits for every field, and
-#       each CoreText match scans the whole font database.
-rm_cocoa="$THIRD/richmemo/cocoa/cocoarichmemo.pas"
-if ! grep -q 'FindFontCacheDescriptor' "$rm_cocoa"; then
-  python3 - "$rm_cocoa" <<'EOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-start_marker = "function FindFont(const FamilyName: String; astyle: TFontStyles): NSFontDescriptor;"
-assert s.count(start_marker) == 1, "FindFont signature not found or not unique"
-start = s.index(start_marker)
-end = s.index("\nend;\n", start) + len("\nend;\n")
-new_fn = """var
-  FindFontCacheFamily: String = '';
-  FindFontCacheTraits: NSFontSymbolicTraits = 0;
-  FindFontCacheDescriptor: NSFontDescriptor = nil;
-
-function FindFont(const FamilyName: String; astyle: TFontStyles): NSFontDescriptor;
-var
-  fd  : NSFontDescriptor;
-  cfd : NSFontDescriptor;
-  old : NSFontDescriptor;
-  fdd : NSFontDescriptor;
-  trt : NSFontSymbolicTraits;
-  trt0: NSFontSymbolicTraits;
-  ns  : NSString;
-  i   : Integer;
-const
-  fallback : array [0..1] of NSFontSymbolicTraits = (NSFontItalicTrait, NSFontBoldTrait);
-begin
-  trt:=0;
-  if fsItalic in aStyle then trt:=trt or NSFontItalicTrait;
-  if fsBold in aStyle then trt:=trt or NSFontBoldTrait;
-  trt0:=trt;
-
-  if Assigned(FindFontCacheDescriptor) and (FamilyName = FindFontCacheFamily)
-    and (trt0 = FindFontCacheTraits) then
-    Exit(FindFontCacheDescriptor);
-
-  ns:=NSStringUtf8(FamilyName);
-  fd:=NSFontDescriptor(NSFontDescriptor.alloc).initWithFontAttributes(nil);
-  cfd:=fd;
-  try
-    fd:=fd.fontDescriptorWithFamily(ns);
-    fd:=fd.fontDescriptorWithSymbolicTraits(trt);
-
-    fdd:=fd.matchingFontDescriptorWithMandatoryKeys(nil);
-    i:=0;
-    while not Assigned(fdd) and (i<length(fallback)) do begin
-      trt:=trt and (not fallback[i]);
-      Inc(i);
-      fd:=fd.fontDescriptorWithSymbolicTraits(trt);
-      fdd:=fd.matchingFontDescriptorWithMandatoryKeys(nil);
-    end;
-    if not Assigned(fdd) then
-      fdd:=NSFont.systemFontOfSize(0).fontDescriptor;
-    Result:=fdd;
-    if Assigned(FindFontCacheDescriptor) then FindFontCacheDescriptor.release;
-    FindFontCacheDescriptor:=fdd;
-    FindFontCacheDescriptor.retain;
-    FindFontCacheFamily:=FamilyName;
-    FindFontCacheTraits:=trt0;
-  finally
-    ns.release;
-    cfd.release;
-  end;
-end;
-"""
-s = s[:start] + new_fn + s[end:]
-open(p, 'w').write(s)
-EOF
-  echo "patch richmemo cocoa FindFont: retry loop increments, system-font fallback, match cache (no infinite font-match hang)"
-fi
-
-# sed -i above uses the portable -i.fmd2bak form (BSD sed on macOS requires
-# a suffix argument); drop the backup files it leaves behind.
-find "$THIRD" -name '*.fmd2bak' -delete 2>/dev/null || true
+# --- Patches for the pinned upstream packages (idempotent) ------------------
+# Every patch lives in scripts/patch-deps.py - one function per patch, each
+# documented with the symptom that required it. Summary:
+#   UP1/UP1b/UP1c/UP3 virtualtreeview qt6 paths + Move() ambiguity (Linux port)
+#   UP2  internettools declares its laz_synapse dependency
+#   UP4  richmemo Cocoa GetDict: empty text crashed the title view
+#   UP5  richmemo Cocoa ranges: TextLen=-1 crashed the title view
+#   UP6  richmemo Cocoa FindFont: an unmatched font hung the title view
+# (The LCL itself is patched separately by scripts/patch-lcl.py, run from
+# the CI workflow against the installed Lazarus - see MOJAVE.md.)
+python3 "$ROOT/scripts/patch-deps.py" "$THIRD"
 
 # --- duk_module_duktape (duktape extras, MIT): system libduktape.so does not
 #     export duk_module_duktape_init, but JS require() inside Duktape.ExecJS
