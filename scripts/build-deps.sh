@@ -205,6 +205,89 @@ EOF
   echo "patch richmemo cocoa ranges: TextLen<0 means to-end, clamp start offset (no NSRangeException)"
 fi
 
+# UP6: richmemo cocoa FindFont (used by SetTextAttributes) has a retry
+#       loop whose counter is never incremented: when CoreText cannot
+#       match the requested family+traits, matchingFontDescriptor is
+#       called forever and the UI hangs displaying the info panel (an
+#       Activity Monitor sample on the user's iMac showed the main
+#       thread inside FindFont for ~100% of samples while the info
+#       thread waited in Synchronize — the fetch itself had finished).
+#       Rewrite: increment the counter, fall back to the system font
+#       instead of returning nil, and cache the last match — an info
+#       panel restyles the same family+traits for every field, and
+#       each CoreText match scans the whole font database.
+rm_cocoa="$THIRD/richmemo/cocoa/cocoarichmemo.pas"
+if ! grep -q 'FindFontCacheDescriptor' "$rm_cocoa"; then
+  python3 - "$rm_cocoa" <<'EOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+start_marker = "function FindFont(const FamilyName: String; astyle: TFontStyles): NSFontDescriptor;"
+assert s.count(start_marker) == 1, "FindFont signature not found or not unique"
+start = s.index(start_marker)
+end = s.index("\nend;\n", start) + len("\nend;\n")
+new_fn = """var
+  FindFontCacheFamily: String = '';
+  FindFontCacheTraits: NSFontSymbolicTraits = 0;
+  FindFontCacheDescriptor: NSFontDescriptor = nil;
+
+function FindFont(const FamilyName: String; astyle: TFontStyles): NSFontDescriptor;
+var
+  fd  : NSFontDescriptor;
+  cfd : NSFontDescriptor;
+  old : NSFontDescriptor;
+  fdd : NSFontDescriptor;
+  trt : NSFontSymbolicTraits;
+  trt0: NSFontSymbolicTraits;
+  ns  : NSString;
+  i   : Integer;
+const
+  fallback : array [0..1] of NSFontSymbolicTraits = (NSFontItalicTrait, NSFontBoldTrait);
+begin
+  trt:=0;
+  if fsItalic in aStyle then trt:=trt or NSFontItalicTrait;
+  if fsBold in aStyle then trt:=trt or NSFontBoldTrait;
+  trt0:=trt;
+
+  if Assigned(FindFontCacheDescriptor) and (FamilyName = FindFontCacheFamily)
+    and (trt0 = FindFontCacheTraits) then
+    Exit(FindFontCacheDescriptor);
+
+  ns:=NSStringUtf8(FamilyName);
+  fd:=NSFontDescriptor(NSFontDescriptor.alloc).initWithFontAttributes(nil);
+  cfd:=fd;
+  try
+    fd:=fd.fontDescriptorWithFamily(ns);
+    fd:=fd.fontDescriptorWithSymbolicTraits(trt);
+
+    fdd:=fd.matchingFontDescriptorWithMandatoryKeys(nil);
+    i:=0;
+    while not Assigned(fdd) and (i<length(fallback)) do begin
+      trt:=trt and (not fallback[i]);
+      Inc(i);
+      fd:=fd.fontDescriptorWithSymbolicTraits(trt);
+      fdd:=fd.matchingFontDescriptorWithMandatoryKeys(nil);
+    end;
+    if not Assigned(fdd) then
+      fdd:=NSFont.systemFontOfSize(0).fontDescriptor;
+    Result:=fdd;
+    if Assigned(FindFontCacheDescriptor) then FindFontCacheDescriptor.release;
+    FindFontCacheDescriptor:=fdd;
+    FindFontCacheDescriptor.retain;
+    FindFontCacheFamily:=FamilyName;
+    FindFontCacheTraits:=trt0;
+  finally
+    ns.release;
+    cfd.release;
+  end;
+end;
+"""
+s = s[:start] + new_fn + s[end:]
+open(p, 'w').write(s)
+EOF
+  echo "patch richmemo cocoa FindFont: retry loop increments, system-font fallback, match cache (no infinite font-match hang)"
+fi
+
 # sed -i above uses the portable -i.fmd2bak form (BSD sed on macOS requires
 # a suffix argument); drop the backup files it leaves behind.
 find "$THIRD" -name '*.fmd2bak' -delete 2>/dev/null || true
